@@ -71,6 +71,23 @@ falla con un listado legible de las diferencias.
 - **Todo se filtra por `schemaname = 'public'`** para no comparar el catálogo
   interno de Postgres, que cambia entre versiones por diseño.
 
+### Qué destapó al correrla de verdad
+
+La promesa de compatibilidad no se puede comprobar sin los dos motores, y por eso
+esta prueba se salta sola cuando no hay Postgres — lo cual tiene una trampa: un
+error dentro de la propia consulta de introspección no se nota hasta que alguien
+la corre en serio. La primera ejecución real (PostgreSQL 16.14 en Docker) encontró
+exactamente eso:
+
+1. `'identity: ' || attidentity` no compila. `attidentity` y `attgenerated` son del
+   tipo interno `"char"`, y concatenar un literal con `"char"` es ambiguo para el
+   planificador: *operator is not unique: unknown || "char"*. Va con `::text`.
+2. Lo mismo con `con.contype` al devolverlo como columna.
+
+Con eso corregido, los dos catálogos coinciden **en todo**: tablas, columnas con su
+tipo y su `NOT NULL`, índices (incluido el GIN sobre `to_tsvector('spanish', …)`),
+restricciones, funciones y disparadores.
+
 ## Reglas para que un solo archivo sirva en los dos motores
 
 | Permitido | Prohibido | Por qué |

@@ -17,7 +17,7 @@ celular. También es el punto de venta.
 | Diseño completo (12 documentos) | ✅ terminado — [`docs/`](docs/README.md) |
 | Núcleo: dinero, códigos de barras, precios, totales | ✅ **escrito y con 68 pruebas en verde** |
 | Probador de cámara y códigos (`tools/prueba-camara`) | ✅ **listo — falta probarlo en tu celular** |
-| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 36 pruebas en verde** — el mismo SQL en PGlite y en Postgres 16 |
+| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 38 pruebas en verde** — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
 | API, interfaz web | ⬜ no empezado (el diseño está listo) |
 
 Lo que ya funciona hoy, en `packages/core`: aritmética de dinero en centavos
@@ -150,11 +150,23 @@ herramienta) en [`docs/11 §1`](docs/11-despliegue-gratuito.md) y
 
 ### 2. Base de datos: esquema y migraciones — ✅ hecho
 
-`packages/db` ya tiene las migraciones `0001`–`0003` y 36 pruebas en verde. El
+`packages/db` ya tiene las migraciones `0001`–`0003` y 38 pruebas en verde. El
 esquema está descrito en `docs/02` y `docs/06`, y la regla que lo sostiene todo es
 una: **el mismo archivo .sql corre en PGlite (el navegador) y en PostgreSQL 16 (el
-servidor)**. Si una migración funcionara solo en uno de los dos, hay un test que lo
-dice.
+servidor)**. No es una aspiración: hay una prueba que aplica las migraciones a los
+dos motores y compara los catálogos línea a línea. Corre contra un PostgreSQL 16.14
+real y los esquemas salen idénticos.
+
+Para repetirla hace falta un Postgres desechable (destruye su esquema `public`):
+
+```powershell
+docker run --rm -d --name papeleria-pruebas-pg -p 55432:5432 `
+  -e POSTGRES_PASSWORD=pruebas -e POSTGRES_DB=papeleria_pruebas postgres:16-alpine
+
+$env:DATABASE_URL_PRUEBAS = 'postgres://postgres:pruebas@localhost:55432/papeleria_pruebas'
+pnpm db test
+docker stop papeleria-pruebas-pg     # al terminar (con --rm, se borra solo)
+```
 
 Al escribirlas aparecieron **cinco errores en los documentos**: una extensión que ya
 no hace falta, `uuidv7()` que no existe en ninguna de las dos versiones, un orden

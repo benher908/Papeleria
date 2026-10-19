@@ -65,9 +65,13 @@ const CONSULTAS = {
            a.attname AS columna,
            format_type(a.atttypid, a.atttypmod) AS tipo,
            NOT a.attnotnull AS nula,
+           -- ⚠️ Los ::text no son decorativos. attidentity y attgenerated son
+           -- del tipo interno "char", y concatenar un literal con "char" es
+           -- ambiguo para el planificador:
+           --   ERROR: operator is not unique: unknown || "char"
            CASE
-             WHEN a.attidentity <> '' THEN 'identity: ' || a.attidentity
-             WHEN a.attgenerated <> '' THEN 'generado: ' || a.attgenerated
+             WHEN a.attidentity <> '' THEN 'identity: ' || a.attidentity::text
+             WHEN a.attgenerated <> '' THEN 'generado: ' || a.attgenerated::text
              ELSE ''
            END AS generacion
     FROM pg_attribute a
@@ -94,7 +98,7 @@ const CONSULTAS = {
   restricciones: `
     SELECT c.relname AS tabla,
            con.conname AS nombre,
-           con.contype AS tipo,
+           con.contype::text AS tipo,
            pg_get_constraintdef(con.oid) AS definicion
     FROM pg_constraint con
     JOIN pg_class     c ON c.oid = con.conrelid

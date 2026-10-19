@@ -1,0 +1,8 @@
+packages:
+  - 'packages/*'
+  - 'apps/*'
+
+# pnpm 10+ bloquea los scripts de postinstall por defecto.
+# esbuild (que usa vitest) los necesita para colocar su binario en Windows.
+onlyBuiltDependencies:
+  - esbuild

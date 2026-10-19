@@ -1,0 +1,33 @@
+# Dependencias
+node_modules/
+
+# Builds
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Secretos: .env NO se versiona NUNCA (ver docs/07 §11)
+.env
+.env.*
+!.env.example
+
+# Certificados locales de desarrollo (mkcert) — nunca al repositorio
+certs/
+*.pem
+*.key
+
+# Datos locales
+pgdata/
+respaldos/
+*.dump
+*.sqlite
+*.db
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+npm-debug.log*
+pnpm-debug.log*

@@ -1,0 +1,18 @@
+# Normaliza los finales de línea a LF en todo el repositorio.
+# Sin esto, Windows guarda CRLF, Linux guarda LF, y cada diff sale con el
+# archivo completo como "cambiado" aunque no hayas tocado nada.
+* text=auto eol=lf
+
+# Binarios: no los toques
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+
+# Los archivos generados no cuentan para las estadísticas del repositorio
+pnpm-lock.yaml linguist-generated=true

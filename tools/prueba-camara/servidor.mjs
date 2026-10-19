@@ -291,7 +291,12 @@ function scriptEntorno() {
       cubreIp: info.cubreIp,
     },
   };
-  return `<script>window.__ENTORNO__ = ${JSON.stringify(datos)};<\/script>`;
+  // Los datos salen de aquí y terminan dentro de una etiqueta <script>. El sujeto, los
+  // SAN y la interfaz del certificado son texto que viene del .pem: si trajeran un
+  // `</script>` cerrarían la etiqueta y lo que siguiera se ejecutaría como HTML. No es
+  // un escenario realista (los genera mkcert en esta máquina), pero el escape cuesta una
+  // línea y quita la clase entera de problema, no el caso concreto.
+  return `<script>window.__ENTORNO__ = ${JSON.stringify(datos).replaceAll('<', '\\u003c')};<\/script>`;
 }
 
 const servidorHttps = crearHttps(

@@ -2,6 +2,11 @@
 
 Documentación de diseño. Un solo desarrollador, un solo usuario (el dueño), crece después sin rehacer nada.
 
+> **Estado:** el diseño está completo. El **núcleo ya está escrito y probado** en
+> [`packages/core`](../packages/core) — 68 pruebas sobre dinero, códigos de barras,
+> precios y totales de venta (`pnpm test`). Todo lo demás es diseño todavía.
+> **Cómo arrancar:** [`README.md`](../README.md) de la raíz.
+
 ---
 
 ## 1. Resumen ejecutivo

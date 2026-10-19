@@ -60,17 +60,20 @@ gantt
 
 ### Entregables
 
-| # | Entregable | Criterio de "terminado" |
-|---|-----------|------------------------|
-| 0.1 | Monorepo con pnpm workspaces | `pnpm -r build` compila los 3 paquetes |
-| 0.2 | `packages/core` con dominio y dinero | `bigint` en centavos + `roundHalfUp` con tests |
-| 0.3 | `packages/db/migrations/0001..0003` | Se aplican en **PGlite y Postgres**, verificado en CI |
-| 0.4 | **PGlite en Web Worker** con cliente tipado | Dos pestañas abiertas **no** corrompen la BD |
-| 0.5 | `emitirEvento()` + `outbox` | Una venta de prueba escribe estado + evento en una transacción |
-| 0.6 | `evaluar()` (RBAC+ABAC) con un rol | Tabla de tests de políticas en verde |
-| 0.7 | Login mínimo (contraseña argon2id + cookie httpOnly) | Entras, la sesión persiste, `logout` funciona |
-| 0.8 | `useBarcodeWedge` (HID) | Un lector de $25 o un script que simule pulsaciones imprime el código en consola |
-| 0.9 | **Prueba de riesgo: cámara en el celular** | Un `<video>` que lea un EAN-13 con `BarcodeDetector` **en HTTPS** |
+| # | Entregable | Criterio de "terminado" | Estado |
+|---|-----------|------------------------|--------|
+| 0.1 | Monorepo con pnpm workspaces | `pnpm -r build` compila los 3 paquetes | 🟡 monorepo y workspaces listos; faltan `apps/*` |
+| 0.2 | `packages/core` con dominio y dinero | `bigint` en centavos + `roundHalfUp` con tests | ✅ **68 pruebas en verde** (+ EAN-13, precios y totales) |
+| 0.3 | `packages/db/migrations/0001..0003` | Se aplican en **PGlite y Postgres**, verificado en CI | ⬜ |
+| 0.4 | **PGlite en Web Worker** con cliente tipado | Dos pestañas abiertas **no** corrompen la BD | ⬜ |
+| 0.5 | `emitirEvento()` + `outbox` | Una venta de prueba escribe estado + evento en una transacción | ⬜ |
+| 0.6 | `evaluar()` (RBAC+ABAC) con un rol | Tabla de tests de políticas en verde | ⬜ |
+| 0.7 | Login mínimo (contraseña argon2id + cookie httpOnly) | Entras, la sesión persiste, `logout` funciona | ⬜ |
+| 0.8 | `useBarcodeWedge` (HID) | Un lector de $25 o un script que simule pulsaciones imprime el código en consola | ⬜ |
+| 0.9 | **Prueba de riesgo: cámara en el celular** | Un `<video>` que lea un EAN-13 con `BarcodeDetector` **en HTTPS** | ⬜ **empieza aquí** |
+
+> **Orden sugerido a partir de hoy:** 0.9 (riesgo) → 0.3 → 0.4 → 0.6 → los demás.
+> La 0.2 ya está hecha y era la única que se podía adelantar sin decidir nada más.
 
 ### La tarea 0.9 es la más importante de esta fase
 
@@ -384,4 +387,7 @@ Si de todo el documento solo puedes ejecutar tres cosas:
 2. **Compra el UPS ($50) y el lector HID ($25).** El UPS protege lo que ya tienes; el lector va a hacer que el sistema sea agradable desde el primer día.
 3. **Exporta tu inventario actual a CSV y cuéntalo.** Saber si son 800 o 4 500 SKU cambia el plan de carga y las estimaciones.
 
-Y después: **F0, tarea por tarea.**
+Y después: **F0, tarea por tarea** — empezando por 0.9 y siguiendo por 0.3.
+
+> La tarea 0.2 ya está hecha: `pnpm test` corre 68 pruebas sobre dinero, EAN-13,
+> precios y totales de venta. Corre `pnpm test` una vez y verás el punto de partida.

@@ -183,15 +183,15 @@ Hoy, la única fila de `user_roles` es `(dueña, dueno)`. Listo.
 
 ## 4. ABAC: políticas por atributos
 
-RBAC dice "el cajero puede vender". ABAC dice **bajo qué condiciones**. Un ABAC completo evalúa 4 grupos de atributos:
+RBAC dice "el cajero puede vender". ABAC dice **bajo qué condiciones**. Un ABAC completo evalúa 4 grupos de atributos. Éstos son los tipos reales (`packages/core/src/policies/tipos.ts`), no un boceto:
 
 ```ts
 export type ContextoPolitica = {
   // 1. SUJETO — quién
   sujeto: {
     user_id: string;
-    roles: string[];                 // ['dueno']
-    permisos: string[];              // ['ventas:crear', ...]
+    roles: readonly string[];        // ['dueno']
+    permisos: readonly string[];     // ['ventas:crear', ...]
     tiene_step_up_reciente: boolean; // ⭐ habilitado por re-autenticación (PIN/passkey)
     step_up_hace_segundos: number | null;
     dispositivo_confiable: boolean;
@@ -200,56 +200,126 @@ export type ContextoPolitica = {
 
   // 2. RECURSO — sobre qué
   recurso: {
-    tipo: 'venta' | 'producto' | 'movimiento' | 'turno' | 'usuario' | 'politica';
+    tipo: 'venta' | 'producto' | 'movimiento' | 'turno' | 'conteo'
+        | 'precio' | 'usuario' | 'politica' | 'dispositivo' | 'config';
     id?: string;
-    // Atributos del recurso concreto:
+    // Precios
     precio_actual_minor?: number;
     precio_nuevo_minor?: number;
     costo_minor?: number;
-    monto_minor?: number;             // total de la venta / monto del ajuste
+    // Dinero
+    monto_minor?: number;            // total de la venta / monto del ajuste o del retiro
     descuento_pct?: number;
+    descuento_minor?: number;
+    // Stock
     valor_stock_afectado_minor?: number;
-    es_venta_ya_cerrada?: boolean;
     producto_tiene_stock?: boolean;
+    // Ventas
+    es_venta_ya_cerrada?: boolean;
+    tiene_ticket?: boolean;
+    impresion_numero?: number;       // 1 = primera impresión, 2 = primera reimpresión (P16)
+    // Conteos
+    diferencia_pct?: number;
+    diferencia_minor?: number;       // positiva = sobrante, negativa = faltante
+    conteo_ya_aplicado?: boolean;
+    // Caja
+    retiros_en_turno?: number;
   };
 
   // 3. ACCIÓN — qué
   accion: {
-    permiso: string;                  // 'ventas:crear'
-    es_masiva?: boolean;              // ¿afecta a varios productos a la vez?
+    permiso: string;                 // 'ventas:crear'
+    productos_afectados?: number;    // P4 se dispara arriba de 5
   };
 
   // 4. ENTORNO — contexto
   entorno: {
-    hora_local: number;               // 0–23
-    dia_semana: number;               // 0–6
+    hora_local: number;              // 0–23
+    dia_semana: number;              // 0 = domingo
     en_temporada_escolar: boolean;
     terminal_id: string;
-    es_offline: boolean;              // ⭐ hay políticas que cambian offline
-    rango_diferencia_conteo?: 'bajo' | 'medio' | 'alto';
+    es_offline: boolean;             // ⭐ hay políticas que cambian offline
   };
 };
 
 // ⭐ El resultado NO es solo un booleano:
 export type Decision = {
   permitido: boolean;
-  motivo: string;                     // siempre explicable: 'descuento 15% > 10% sin step-up'
-  obligaciones: Array<
-    | 'step_up'                       // pedir PIN/passkey ahora
-    | 'motivo_obligatorio'            // exigir una nota (≥10 caracteres)
-    | 'notificar_dueno'               // mandar aviso aunque se permita
-    | 'marcar_para_revision'          // se permite pero queda marcado
-    | 'segunda_aprobacion'            // requiere que el dueño confirme desde otro dispositivo
-  >;
-  politica_id?: string;               // qué regla decidió → queda en el audit_log
+  motivo: string;                    // siempre explicable: 'descuento 15% > 10% sin step-up'
+  obligaciones: readonly (
+    | 'step_up'                      // pedir PIN/passkey ahora
+    | 'motivo_obligatorio'           // exigir una nota (≥10 caracteres)
+    | 'notificar_dueno'              // mandar aviso aunque se permita
+    | 'marcar_para_revision'         // se permite pero queda marcado
+  )[];
+  politica_id?: string;              // qué regla decidió → queda en el audit_log
+  porContextoIncompleto?: boolean;   // se denegó sin poder evaluar la condición (fallar cerrado)
 };
 ```
 
+**Tres cosas del boceto original que cambiaron al escribirlo, y por qué:**
+
+1. **`segunda_aprobacion` no existe.** Este boceto la listaba como quinta obligación, pero el `CHECK` de `0002_rbac_abac.sql` siempre aceptó cuatro. Se quedó en cuatro: si algún día hace falta "que el dueño confirme desde otro dispositivo", es un cambio de esquema consciente, no un valor que se cuela. Una obligación que el catálogo no conoce no se puede cumplir y la regla deja de proteger en silencio.
+2. **`accion.es_masiva` y `entorno.rango_diferencia_conteo` desaparecieron.** Los dos son **umbrales precalculados en código**: `es_masiva` esconde el "más de 5 productos" de P4 y `rango_diferencia_conteo` esconde el "10 % del valor" de P7. Pero §10 pide que cambiar un umbral sea editar un dato, no desplegar. Con el enum, el umbral vive en el código que lo calcula y la pantalla de umbrales no lo puede tocar. En su lugar van los números crudos (`accion.productos_afectados`, `recurso.diferencia_pct`) y la política compara contra ellos.
+3. **Aparecieron los campos que las 31 reglas necesitan de verdad** (`descuento_minor` para P11, `tiene_ticket` para P9, `impresion_numero` para P16, `diferencia_minor` para P17, `conteo_ya_aplicado` para P24, `retiros_en_turno` para P15). El boceto era ilustrativo; una regla que pregunta por un campo que no existe **no se cumple nunca**, así que la lista tiene que ser exacta.
+
 **La parte más valiosa es `obligaciones`.** Un sistema solo-allow/deny te obliga a elegir entre bloquear al empleado o darle vía libre. Las obligaciones permiten "sí, pero con PIN", "sí, pero con motivo escrito", "sí, pero me avisas". Es exactamente cómo funciona una papelería de verdad.
+
+### 4.1 La gramática de `condicion` (lo que faltaba para poder sembrar las reglas)
+
+Una condición es un árbol JSON serializable, y vive en la columna `policies.condicion` porque offline no hay servidor a quien preguntar: las reglas viajan con el catálogo.
+
+```ts
+type Condicion =
+  | { op: 'siempre' }
+  | { op: 'and' | 'or'; args: Condicion[] }
+  | { op: 'not'; arg: Condicion }
+  | { op: 'en'; campo: string; valores: (number | string)[] }
+  | { op: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'gt_abs';
+      campo: string;
+      valor?: number | string | boolean;   // ─┐ exactamente uno
+      campo2?: string;                     // ─┘ de los dos
+    };
+```
+
+**El lado derecho puede ser otro campo (`campo2`).** Ésta es la pieza que bloqueaba todo: P1 ("precio nuevo **menor al costo**") compara `recurso.precio_nuevo_minor` con `recurso.costo_minor`, y las tres formas publicadas sólo comparaban un campo contra un literal. No había forma de escribir la regla sin inventar un campo precalculado (`es_bajo_costo`) y meter la lógica en código.
+
+**`gt_abs` compara contra el valor absoluto.** P17 habla de la diferencia de un arqueo, que puede ser sobrante o faltante. Con `lt` habría que escribir el umbral dos veces, una positiva y otra negativa, y dos copias de un umbral es la forma segura de que un día digan cosas distintas.
+
+**El catálogo de campos es cerrado** (`packages/core/src/policies/campos.ts`) y está tipado sobre `ContextoPolitica`: añadir un campo al contexto y no describirlo ahí **no compila**. Al cargar una política se valida contra él y un nombre mal escrito lanza con el nombre y una sugerencia (`recurso.monto` → *¿quisiste decir `recurso.monto_minor`?*). Sin eso, un campo mal escrito da "condición no cumplida" en cada venta y apaga una regla de seguridad sin que nada avise.
+
+**Y `sujeto.roles` / `sujeto.permisos` NO se pueden consultar desde una política**, a propósito. §8 prohíbe las condiciones de rol en el código (`if (rol === 'dueno')`); permitirlas aquí sería lo mismo con otra sintaxis. El RBAC ya las resolvió antes de llegar al evaluador.
+
+### 4.2 La decisión importante: qué pasa cuando falta un dato
+
+`evaluarCondicion()` devuelve `true`, `false` o **`null` (indeterminado)**. El `null` existe por el mismo motivo que el `CHECK` de `obligaciones`: una regla mal escrita no puede apagarse en silencio.
+
+- `and` es indeterminado si algún argumento lo es y ninguno es falso; `or` al revés.
+- `evaluar()` resuelve la indeterminación **según el efecto**: una regla que **deniega** con condición indeterminada **se aplica** (fallar cerrado); una que **permite**, no.
+- Y quien construye el contexto (en `@papeleria/db`) comprueba antes con `camposFaltantes()` que no falte nada que una regla aplicable necesite, y **lanza nombrando los campos**. Sin esa comprobación, olvidar `recurso.descuento_pct` en una venta dejaría pasar un descuento del 40 % sin pedir autorización, y nadie se enteraría.
+
+### 4.3 Deny-overrides
+
+Si **alguna** regla aplicable deniega, se deniega. Sin excepciones y sin importar el orden. Es lo correcto en seguridad: con "el último gana" o "el más específico gana", una regla nueva acaba abriendo un hueco que otra ya había cerrado. Con deny-overrides, **añadir reglas sólo puede restringir**. Las obligaciones, en cambio, se acumulan — y con deny-overrides eso es seguro, porque no hay nada que "quite" una obligación.
+
+El `step_up` es la única que el evaluador resuelve por su cuenta: si `sujeto.tiene_step_up_reciente` es cierto, la obligación desaparece. Por eso **ninguna condición menciona el step-up**. El boceto original ponía en P10 la cláusula `tiene_step_up_reciente == false`; funciona para P10 (que sólo pide `step_up`) pero hunde a P11, que además pide motivo y aviso: al teclear el PIN la cláusula deja de cumplirse, la regla deja de aplicar y las otras dos obligaciones se van con ella. El dueño autoriza y la venta se registra sin motivo y sin aviso.
 
 ## 5. Políticas concretas para tu papelería
 
-Estas son las que implementaría. Están escritas en lenguaje natural porque el motor las va a evaluar como datos; abajo está la implementación.
+Estas son las 31 reglas, y ya no son una propuesta: **están sembradas como datos** en [`0005_politicas.sql`](../packages/db/migrations/0005_politicas.sql), y `packages/db/src/autorizacion.test.ts` ejecuta la tabla de §9 **contra estas filas y contra el reparto real de permisos**, no contra fixtures.
+
+La cuenta exacta: **30 filas para 31 reglas.**
+
+- P1–P19 y P24–P31 son 27 filas, una por regla.
+- **P21 son dos filas** (`P21a-usuarios`, `P21b-politicas`): son dos permisos distintos con la misma decisión, y `aplica_a.permiso` admite `'usuarios:*'` para no repetir los cuatro permisos de usuarios.
+- **P20 y P23 no tienen fila, y no es un olvido.** Son RBAC puro: `precios:ver_costos` no lo tiene el cajero y punto; `auditoria:leer` lo tienen el dueño y el auditor. No hay ninguna condición de atributo que evaluar. Una fila que dijera "denegar si falta el permiso" sería el RBAC escrito dos veces, y dos fuentes de verdad para un permiso acaban discrepando.
+
+**Dos detalles de implementación que las tablas de abajo no dicen:**
+
+- **P22 no tiene obligaciones, y su fila existe para documentarlo.** Lo que de verdad impide el estrangulamiento (que el cajero no pueda revocar un celular robado) es `permissions.es_sensible = false` en `dispositivos:revocar`, no la fila: las obligaciones se suman y con deny-overrides nada las quita. La fila está para que la decisión quede escrita en el mismo sitio que las demás y la pantalla de políticas la muestre.
+- **P18 no tiene `registrar en auditoría` como obligación.** Toda emisión pasa por `emitirEvento()`, que escribe la auditoría, así que no hace falta pedirlo. Si fuera una obligación, habría una forma de cumplirla mal y otra de olvidarla.
+
+> ⚠️ **P28 está incompleta y se dice.** La regla pide que, sin red, el descuento "se limite al 5 %". Eso no es una decisión binaria con obligaciones: es **modificar un valor**, y `policies` puede permitir, denegar y exigir cosas, pero no reescribir el dato. La fila siembra la mitad que sí se puede (`marcar_para_revision`) y el tope queda pendiente de una capacidad que hoy no existe (efectos sobre el valor, no sobre la decisión). Está anotado en el `motivo` de la propia política, así que se ve en la pantalla de administración, y en el encabezado de la migración. Abierto, no escondido.
 
 ### 5.1 Protección contra el error (aplica al dueño)
 
@@ -551,6 +621,10 @@ Si la versión de políticas del cliente es **más antigua** que la del servidor
 
 Las políticas son **código de seguridad**. Si no tienen tests, vas a romper una sin saberlo. Una tabla de casos cubre el 100 %:
 
+> **Dónde vive hoy:** en [`packages/db/src/autorizacion.test.ts`](../packages/db/src/autorizacion.test.ts), no en `packages/core` como decía el boceto. El motivo: con `politicasSeed` y `permisosDeRol(rol)` como fixtures, la tabla demuestra que `evaluar()` funciona con datos inventados. Corriendo contra la tabla `policies` y el reparto `role_permissions` de verdad, demuestra que **el sistema** hace lo que este documento dice. Lo que sí vive en `packages/core` es la gramática (operadores, tipos, indeterminación) y deny-overrides, con los casos mínimos que los aíslan.
+
+La tabla, tal como corre (los contextos son parciales a propósito; `armarCtx` rellena el resto):
+
 ```ts
 // packages/core/src/policies/__tests__/evaluar.test.ts
 type Caso = {
@@ -665,20 +739,22 @@ ROLES                                    POLÍTICAS
 
 ## 11. Checklist de este módulo
 
-- [ ] `roles`, `permissions`, `role_permissions`, `user_roles` con `expira_at` en la asignación
-- [ ] 4 roles sembrados (**dueno**, cajero, bodega, auditor) aunque solo uses uno hoy
-- [ ] ~28 permisos en formato `recurso:acción`, ninguno ad-hoc
-- [ ] **Cero** condiciones de rol hardcodeadas en el código (`if (rol === ...)` prohibido)
-- [ ] Evaluador `evaluar()` **puro**, sin IO, en `packages/core` (se usa en las 3 capas)
-- [ ] `policies` como **datos** en la base de datos, con `version`, `prioridad` y `activa`
-- [ ] **Deny-overrides** implementado y con test explícito
-- [ ] `Decision.obligaciones` (step_up, motivo, notificar, marcar para revisión)
-- [ ] Step-up: PIN/passkey, 5 min, atado a la acción, 5 intentos, registro en auditoría
-- [ ] PIN con **argon2id**, validado **localmente** (para poder cumplirlo offline)
-- [ ] Salida de emergencia: el bloqueo del PIN se puede levantar con passkey o contraseña
-- [ ] Políticas firmadas con Ed25519 + verificación en el cliente + rechazo auditable
-- [ ] Políticas específicas de **offline** (P25–P31) implementadas
-- [ ] Server **re-valida** todo en `/sync/push`; nunca confía en el cliente
-- [ ] Events rechazados van a una **cola de revisión visible** al dueño (nunca en silencio)
-- [ ] Tabla de **tests de políticas** en CI, cubriendo: denegaciones, obligaciones y offline
-- [ ] Pantalla de administración: usuarios, roles, políticas y umbrales editables en vivo
+Estado al cerrar la tarea 0.6. `✅` = hecho y con prueba; `🟡` = la mitad; `⬜` = pendiente de otra tarea.
+
+- ✅ `roles`, `permissions`, `role_permissions`, `user_roles` con `expira_at` en la asignación (`0002_rbac_abac.sql`)
+- ✅ 4 roles sembrados (**dueno**, cajero, bodega, auditor) aunque solo uses uno hoy
+- ✅ **44 permisos** en formato `recurso:acción`, ninguno ad-hoc (el documento estimaba ~28; el catálogo real tiene 44)
+- ✅ **Cero** condiciones de rol hardcodeadas en el código. Y no sólo por disciplina: el catálogo de campos del evaluador **no expone** `sujeto.roles` ni `sujeto.permisos`, así que una política no *puede* preguntar por el rol — el RBAC ya decidió antes
+- ✅ Evaluador `evaluar()` **puro**, sin IO, en `packages/core` (se usa en las 3 capas)
+- ✅ `policies` como **datos** en la base de datos, con `version`, `prioridad` y `activa`; las **30 filas** de `0005_politicas.sql` cubren las 31 reglas de §5
+- ✅ **Deny-overrides** implementado y con test explícito (en `packages/core` y en la tabla del §9)
+- ✅ `Decision.obligaciones` (step_up, motivo, notificar, marcar para revisión). `segunda_aprobacion` no existe: el `CHECK` de 0002 siempre aceptó cuatro, y una obligación que el catálogo no conoce es una regla que deja de proteger en silencio
+- 🟡 Step-up: el **mecanismo** está (tabla, consulta acotada a la acción y al objeto, obligación que desaparece al satisfacerse). La **interfaz** (PIN/passkey, 5 intentos, registro) es la tarea 0.7
+- ⬜ PIN con **argon2id**, validado **localmente** (tarea 0.7)
+- ⬜ Salida de emergencia: el bloqueo del PIN se puede levantar con passkey o contraseña
+- ⬜ Políticas firmadas con Ed25519 + verificación en el cliente + rechazo auditable
+- ✅ Políticas específicas de **offline** (P25–P31) sembradas. Excepción declarada: **el tope del 5 % de P28 no es representable** (ver §5) y queda abierto
+- ⬜ Server **re-valida** todo en `/sync/push`; nunca confía en el cliente (F4)
+- ⬜ Events rechazados van a una **cola de revisión visible** al dueño (nunca en silencio)
+- ✅ Tabla de **tests de políticas**, cubriendo denegaciones, obligaciones y offline. Corre en CI cuando haya remoto; hoy se ejecuta con `pnpm test`
+- ⬜ Pantalla de administración: usuarios, roles, políticas y umbrales editables en vivo (F6)

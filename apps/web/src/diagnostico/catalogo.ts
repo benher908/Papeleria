@@ -49,6 +49,10 @@ export const COMPROBACIONES: readonly Comprobacion[] = [
     esperado: 81,
     sql: 'SELECT count(*)::int AS n FROM role_permissions',
   },
+  // La de 0005. Importa más de lo que parece: si esta migración no llegara al
+  // navegador, `autorizar()` no encontraría ni una regla y **todo pasaría** — el
+  // modo de fallo exacto que la autorización existe para evitar.
+  { que: 'reglas de autorización', esperado: 30, sql: 'SELECT count(*)::int AS n FROM policies' },
   { que: 'unidades', esperado: 6, sql: 'SELECT count(*)::int AS n FROM units' },
   { que: 'tasas de impuesto', esperado: 3, sql: 'SELECT count(*)::int AS n FROM tax_rates' },
   { que: 'categorías', esperado: 8, sql: 'SELECT count(*)::int AS n FROM categories' },

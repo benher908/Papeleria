@@ -15,10 +15,11 @@ celular. También es el punto de venta.
 | Parte | Estado |
 |---|---|
 | Diseño completo (12 documentos) | ✅ terminado — [`docs/`](docs/README.md) |
-| Núcleo: dinero, códigos de barras, precios, totales | ✅ **escrito y con 103 pruebas en verde** |
+| Núcleo: dinero, códigos de barras, precios, totales, autorización | ✅ **escrito y con 154 pruebas en verde** |
 | Probador de cámara y códigos (`tools/prueba-camara`) | ✅ **listo — falta probarlo en tu celular** |
-| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 58 pruebas en verde** — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
+| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 88 pruebas en verde** — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
 | Motor de ventas: `emitirEvento()` + `outbox` | ✅ **estado, evento y auditoría en una sola transacción** — ni una venta a medias, ni un folio gastado |
+| Autorización: `evaluar()` + las 30 reglas sembradas | ✅ **la tabla de casos del doc 06 §9 en verde, contra las reglas reales** |
 | Base local en el navegador (`apps/web`) | ✅ **funcionando** — PGlite en un Web Worker, verificado con **dos pestañas abiertas** |
 | API, interfaz de producto | ⬜ no empezado (el diseño está listo) |
 
@@ -178,7 +179,7 @@ herramienta) en [`docs/11 §1`](docs/11-despliegue-gratuito.md) y
 
 ### 2. Base de datos: esquema y migraciones — ✅ hecho
 
-`packages/db` ya tiene las migraciones `0001`–`0004` y 58 pruebas en verde. El
+`packages/db` ya tiene las migraciones `0001`–`0005` y 88 pruebas en verde. El
 esquema está descrito en `docs/02` y `docs/06`, y la regla que lo sostiene todo es
 una: **el mismo archivo .sql corre en PGlite (el navegador) y en PostgreSQL 16 (el
 servidor)**. No es una aspiración: hay una prueba que aplica las migraciones a los
@@ -212,8 +213,16 @@ Lo que sigue, en orden ([`docs/10`](docs/10-roadmap.md), fase F0):
   evento y su auditoría en una sola transacción. Forzando un fallo después de escribir el
   estado, la base queda idéntica, contadores incluidos. Verificado en PGlite, contra un
   PostgreSQL 16.14 real y a mano en el navegador (sección 4 del panel).
-- **0.6 — `evaluar()` (RBAC + ABAC)** con la tabla de tests de políticas de
-  `docs/06 §9`.
+- **0.6 — `evaluar()` (RBAC + ABAC).** ✅ **Hecho**: `evaluar()` decide sin IO (el mismo
+  código en la caja, el celular y el servidor) y `packages/db/src/autorizacion.ts` carga
+  los permisos, las políticas y el step-up dentro de la transacción del evento. Las 30
+  reglas del `docs/06 §5` están sembradas como datos en `0005_politicas.sql`, y la tabla
+  de casos del `docs/06 §9` corre **contra esas reglas y contra el reparto real de
+  permisos**. De paso: el lado derecho de una comparación puede ser otro campo (sin eso
+  la regla P1 no se puede escribir), y un contexto incompleto **lanza** en vez de dejar
+  una regla apagada en silencio.
+
+Lo que sigue es la prueba de cámara (0.9), el login (0.7) y el lector HID (0.8).
 
 ### 3. La caja (POS) primero, el inventario después
 

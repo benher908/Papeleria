@@ -13,6 +13,7 @@
 
 import { uuidV7 } from '@papeleria/core';
 import {
+  autorizar,
   emitirEvento,
   siguienteFolioLocal,
   type EventoEmitido,
@@ -29,6 +30,9 @@ const ID_PRODUCTO = '0b000001-0000-7000-8000-000000000001';
 
 /** Unidad 'pieza', sembrada por 0003_seed_catalogos.sql. */
 const ID_UNIDAD_PIEZA = '01900000-0000-7000-8002-000000000001';
+
+/** Rol 'dueno', sembrado por 0002_rbac_abac.sql (los 44 permisos). */
+const ID_ROL_DUENO = '01900000-0000-7000-8000-000000000001';
 
 const PREFIJO_TERMINAL = 'C1';
 const TOTAL_MINOR = 4500;
@@ -83,6 +87,12 @@ export async function prepararDatosDePrueba(base: BaseLocal): Promise<void> {
      ON CONFLICT (id) DO NOTHING`,
     [ID_PRODUCTO, ID_UNIDAD_PIEZA, TOTAL_MINOR],
   );
+  // Sin rol no hay permisos, y sin permisos la autorización real deniega la venta —
+  // correctamente. El usuario de prueba es la dueña.
+  await base.ejecutar(`INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [
+    ID_USUARIO,
+    ID_ROL_DUENO,
+  ]);
 }
 
 /**
@@ -102,13 +112,25 @@ export async function emitirVentaDePrueba(base: BaseLocal, fallar: boolean): Pro
       dispositivoId: ID_TERMINAL,
       usuarioId: ID_USUARIO,
 
-      // El evaluador de políticas llega en la tarea 0.6. Aquí se permite todo a
-      // propósito y con el motivo escrito: esto es un banco de pruebas, no el POS.
-      autorizar: async () => ({
-        permitido: true,
-        motivo: 'panel de diagnóstico: el evaluador de políticas es la tarea 0.6',
-        obligaciones: [],
-      }),
+      // La autorización REAL (tarea 0.6), no un «permitir todo»: carga los permisos
+      // del usuario, las 30 reglas sembradas y el step-up vigente, todo **dentro de
+      // esta misma transacción**, y decide con `evaluar()`. La venta de prueba es de
+      // $45 y sin descuento, así que pasa limpia. Si el rol faltara, o una regla
+      // estuviera mal escrita, o al contexto le faltara un dato, este botón lo diría
+      // en vez de fingir que todo está bien.
+      autorizar: (evento, tx) =>
+        autorizar(tx, {
+          usuarioId: ID_USUARIO,
+          dispositivoId: ID_TERMINAL,
+          permiso: 'ventas:crear',
+          recurso: {
+            tipo: 'venta',
+            id: evento.payload.venta_id,
+            monto_minor: evento.payload.total_minor,
+            descuento_pct: 0,
+            descuento_minor: 0,
+          },
+        }),
 
       // El folio se asigna aquí dentro, no antes: así un fallo no quema un número.
       payload: async (tx, datos) => ({

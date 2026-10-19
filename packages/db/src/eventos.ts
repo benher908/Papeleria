@@ -85,7 +85,13 @@ export type ConstructorPayload<Payload> = (
   datos: DatosDelEvento,
 ) => Payload | Promise<Payload>;
 
-/** Lo que devuelve el evaluador de políticas (tarea 0.6). */
+/**
+ * Lo que devuelve el evaluador de políticas.
+ *
+ * Es estructuralmente un `Decision` de `@papeleria/core` (tarea 0.6), más los campos que
+ * sólo interesan aquí. Se declara aparte para que este archivo no dependa del paquete de
+ * autorización: `emitirEvento` no necesita saber cómo se decide, sólo recibir la decisión.
+ */
 export interface DecisionAutorizacion {
   permitido: boolean;
   /** Explicación para el usuario y para la auditoría. Nunca vacía. */
@@ -130,12 +136,21 @@ export interface EntradaEmision<Tipo extends string, Payload> {
   aplicarEstado: (tx: ClienteSql, evento: EventoEmitido<Tipo, Payload>) => Promise<void>;
 
   /**
-   * Autorización. Obligatoria, no opcional y sin valor por defecto: mientras no
-   * exista `evaluar()` (tarea 0.6) el sistema no puede emitir eventos, y eso es
-   * correcto — un "permitir todo" escondido en la biblioteca es exactamente la clase
-   * de agujero que este diseño intenta no tener.
+   * Autorización. Obligatoria, no opcional y sin valor por defecto: un "permitir
+   * todo" escondido en la biblioteca es exactamente la clase de agujero que este
+   * diseño intenta no tener.
+   *
+   * Recibe el `tx` a propósito. Leer los permisos y las políticas **dentro** de la
+   * transacción del evento es lo que garantiza que decide con las reglas que verá el
+   * `COMMIT`: si se leyeran antes del `BEGIN`, entre decidir y escribir cabría un
+   * cambio de rol o una política nueva, y la venta quedaría registrada con la
+   * autorización de ayer. `autorizar()` de `./autorizacion` lo usa para consultar
+   * `user_roles`, `policies` y `step_up_grants` dentro del mismo bloque atómico.
    */
-  autorizar: (evento: EventoEmitido<Tipo, Payload>) => Promise<DecisionAutorizacion>;
+  autorizar: (
+    evento: EventoEmitido<Tipo, Payload>,
+    tx: ClienteSql,
+  ) => Promise<DecisionAutorizacion>;
 
   auditoria?: AuditoriaEmision;
 
@@ -179,8 +194,9 @@ export async function emitirEvento<Tipo extends string, Payload>(
     const payload = await entrada.payload(tx, datos);
     const evento: EventoEmitido<Tipo, Payload> = { ...datos, type: entrada.tipo, payload };
 
-    // 3. Autorización, ANTES de tocar el estado y dentro de la transacción.
-    const decision = await entrada.autorizar(evento);
+    // 3. Autorización, ANTES de tocar el estado y dentro de la transacción: las
+    //    políticas que deciden son las que verá el COMMIT.
+    const decision = await entrada.autorizar(evento, tx);
     if (!decision.permitido) {
       throw new ErrorNoAutorizado(entrada.tipo, decision.motivo);
     }

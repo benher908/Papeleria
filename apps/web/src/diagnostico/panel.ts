@@ -9,6 +9,7 @@
  */
 
 import { DIRECTORIO_POR_DEFECTO, baseLocal, type BaseLocal } from '../db/baseLocal';
+import { migracionesDeFabrica } from '../db/migraciones';
 import { comprobarCatalogo } from './catalogo';
 import { ejecutarPrueba, reiniciar, type ResultadoPrueba } from './multipestana';
 import {
@@ -127,15 +128,17 @@ export async function montarPanel(raiz: HTMLElement): Promise<void> {
           ),
         );
 
-        const huerfanas = await base.consultar<{ nombre: string }>(
-          `SELECT nombre FROM schema_migrations
-            WHERE nombre NOT IN ('0001_init.sql', '0002_rbac_abac.sql',
-                                 '0003_seed_catalogos.sql', '0004_eventos.sql')`,
-        );
+        // Se compara contra la lista del BUNDLE, no contra una escrita aquí. Una lista
+        // a mano es justo lo que el glob de `migraciones.ts` existe para evitar, y aquí
+        // ya se quedó atrás una vez: en cuanto apareció `0005_politicas.sql`, este aviso
+        // la señaló como huérfana sin serlo. Preguntándole al bundle, no puede repetirse.
+        const conocidas = new Set((await migracionesDeFabrica()).map((m) => m.nombre));
+        const huerfanas = filas.filter((f) => !conocidas.has(f.nombre));
         if (huerfanas.length > 0) {
           cuerpo.append(
             aviso('Hay migraciones registradas que el bundle no conoce', [
               huerfanas.map((h) => h.nombre).join(', '),
+              'Suele ser un archivo .sql renombrado o borrado después de aplicarlo. El esquema de esta base no se corresponde con el del código.',
             ]),
           );
         }

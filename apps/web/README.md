@@ -95,6 +95,21 @@ mitad* explota deliberadamente **después** de escribir el estado, que es el peo
 posible: es donde un `try/catch` mal puesto dejaría la venta guardada, el evento sin
 encolar y esa venta sin llegar nunca al servidor.
 
+Y la venta pasa por la **autorización real** (tarea 0.6), no por un «permitir todo»:
+`emitirEvento()` llama a `autorizar()` **dentro de la misma transacción**, que carga el rol
+del usuario, las **30 reglas** sembradas y el step-up vigente, y decide con `evaluar()`. El
+usuario de prueba es la dueña (rol `dueno`, los 44 permisos). Si se le quita el rol —o se le
+vence el `expira_at`, que es como se prueba— el botón de vender deja de funcionar, con el
+motivo exacto y sin escribir nada:
+
+```text
+No autorizado para emitir "sale.created": El rol no incluye ventas:crear
+```
+
+Comprobado en un navegador real: rol vencido → la venta rebota y la foto no cambia ni una
+fila. Es la misma decisión que fija `packages/db/src/autorizacion.test.ts`, pero pasando por
+PGlite, por el `IndexedDB` y por el Web Worker de verdad.
+
 Cada pulsación imprime la cuenta antes y después; con el fallo provocado sale:
 
 ```text

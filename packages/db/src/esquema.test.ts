@@ -254,11 +254,17 @@ describe('esquema: semillas', () => {
     ]);
   });
 
-  test('unidades, tasas, categorías y configuración', async () => {
+  test('unidades, tasas, categorías, configuración y reglas', async () => {
     expect(await contar('SELECT count(*)::int AS n FROM units')).toBe(6);
     expect(await contar('SELECT count(*)::int AS n FROM tax_rates')).toBe(3);
     expect(await contar('SELECT count(*)::int AS n FROM categories')).toBe(8);
     expect(await contar('SELECT count(*)::int AS n FROM settings')).toBe(12);
+
+    // Las 30 filas de 0005 (las 31 reglas del doc 06 §5: P20 y P23 son RBAC puro y
+    // P21 son dos permisos). Lo que cada regla *hace* se prueba en
+    // `autorizacion.test.ts`; aquí sólo se inventaría, para que un archivo que no se
+    // aplicó se note aunque nadie evalúe una política.
+    expect(await contar('SELECT count(*)::int AS n FROM policies')).toBe(30);
 
     const { rows } = await cliente.query<{ v: unknown }>(
       `SELECT valor AS v FROM settings WHERE clave = 'precio_incluye_iva'`,

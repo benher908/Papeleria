@@ -30,6 +30,7 @@ describe('migraciones en el navegador', () => {
       '0002_rbac_abac.sql',
       '0003_seed_catalogos.sql',
       '0004_eventos.sql',
+      '0005_politicas.sql',
     ]);
   });
 });

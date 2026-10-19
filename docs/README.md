@@ -47,7 +47,7 @@ Un solo lenguaje (TypeScript) para todo: web de caja, app del celular, generaci�
 | Tiempo real (escáner) | **WebSocket (`ws`)** | Bidireccional, ~40 líneas de código. |
 | Códigos de barras | **bwip-js** | EAN-13, Code 128, QR. Genera en canvas, funciona offline. |
 | Impresión de etiquetas | **PDF (`pdf-lib`) o CSS `@media print`** | Etiquetas en hoja A4 o en térmica. Sin drivers. |
-| Autorización | **Motor propio de políticas** (~60 líneas, puro y testeable) con roles/permisos/políticas en tablas; **Casbin** es alternativa válida | Un usuario hoy, N empleados mañana, sin reescribir. Detalle en [06](06-authz-rbac-abac.md) |
+| Autorización | **Motor propio de políticas** (puro y sin IO: gramática de condiciones, catálogo cerrado de campos, evaluador con deny-overrides) con roles/permisos/políticas en tablas; **Casbin** es alternativa válida | Un usuario hoy, N empleados mañana, sin reescribir. Detalle en [06](06-authz-rbac-abac.md) |
 | Servidor | **VPS pequeño + Caddy** (HTTPS automático) o el **propio PC** en la red local | Detalle de costo/beneficio en [09](09-despliegue-y-costos.md). |
 
 **Por qué web/PWA y no app nativa (Expo/React Native):**

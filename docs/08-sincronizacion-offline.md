@@ -84,8 +84,10 @@ return cliente.transaction(async (tx) => {
   const payload = await entrada.payload(tx, datos);
   const evento = { ...datos, type: entrada.tipo, payload };
 
-  // 3. Autorización, ANTES de tocar el estado (doc 06).
-  const decision = await entrada.autorizar(evento);
+  // 3. Autorización, ANTES de tocar el estado y DENTRO de la transacción (doc 06).
+  //    El `tx` va en la llamada para que quien decide lea permisos y políticas con
+  //    el mismo bloque atómico que verá el COMMIT.
+  const decision = await entrada.autorizar(evento, tx);
   if (!decision.permitido) throw new ErrorNoAutorizado(entrada.tipo, decision.motivo);
 
   // 4. El estado. Si esto lanza, se revierte TODO: evento, contadores y auditoría.
@@ -103,9 +105,9 @@ return cliente.transaction(async (tx) => {
 **Beneficios de tener un único eje:**
 
 - La autorización **no se puede olvidar**: `autorizar` es un campo obligatorio y **sin
-  valor por defecto**. Mientras no exista `evaluar()` (tarea 0.6) el sistema no puede
-  emitir eventos, y eso es correcto: un «permitir todo» escondido en la biblioteca es
-  exactamente la clase de agujero que este diseño intenta no tener.
+  valor por defecto**. No hay ningún «permitir todo» escondido en la biblioteca; lo pone
+  el llamador, normalmente con `autorizar(tx, …)` de `@papeleria/db`, que carga permisos,
+  políticas y step-up dentro de la misma transacción. Si no se pone, no se puede emitir.
 - La auditoría **no se puede olvidar**: igual.
 - El `event_id`, el `device_seq`, el HLC y el **folio local** se asignan en un solo lugar:
   sin huecos ni duplicados.

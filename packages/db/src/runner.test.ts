@@ -2,7 +2,8 @@ import { PGlite } from '@electric-sql/pglite';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, test } from 'vitest';
 import { adaptarPglite } from './adaptadores';
-import { cargarMigraciones, hashDe } from './archivos';
+import { cargarMigraciones } from './archivos';
+import { hashDe } from './hash';
 import { ErrorMigracionDivergente, migrar, type ClienteSql, type Migracion } from './runner';
 
 const DIR_MIGRACIONES = fileURLToPath(new URL('../migrations/', import.meta.url));
@@ -77,7 +78,7 @@ describe('runner de migraciones', () => {
     const primera = migraciones[0] as Migracion;
     const sqlCambiado = `${primera.sql}\n-- columna agregada a mano\n`;
     const alteradas: Migracion[] = [
-      { ...primera, sql: sqlCambiado, hash: hashDe(sqlCambiado) },
+      { ...primera, sql: sqlCambiado, hash: await hashDe(sqlCambiado) },
       ...migraciones.slice(1),
     ];
 
@@ -109,7 +110,7 @@ describe('runner de migraciones', () => {
     // creada a medias sin que la migración conste como aplicada: un esquema
     // fantasma que ninguna migración vuelve a construir.
     const sqlRoto = 'CREATE TABLE se_crea_antes (id int);\nCREATE TABLE esto_no_compila (;';
-    const rota: Migracion = { nombre: '0004_rota.sql', sql: sqlRoto, hash: hashDe(sqlRoto) };
+    const rota: Migracion = { nombre: '0004_rota.sql', sql: sqlRoto, hash: await hashDe(sqlRoto) };
 
     await expect(migrar(cliente, [...migraciones, rota])).rejects.toThrow(/0004_rota\.sql/);
 
@@ -130,7 +131,7 @@ describe('runner de migraciones', () => {
     await migrar(cliente, migraciones);
 
     const sqlRoto = 'SELECT esto_no_existe_en_ninguna_parte;';
-    const rota: Migracion = { nombre: '0005_mala.sql', sql: sqlRoto, hash: hashDe(sqlRoto) };
+    const rota: Migracion = { nombre: '0005_mala.sql', sql: sqlRoto, hash: await hashDe(sqlRoto) };
 
     await expect(migrar(cliente, [...migraciones, rota])).rejects.toThrow(
       /Falló la migración 0005_mala\.sql[\s\S]*esto_no_existe_en_ninguna_parte/,

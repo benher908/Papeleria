@@ -18,7 +18,8 @@ celular. También es el punto de venta.
 | Núcleo: dinero, códigos de barras, precios, totales | ✅ **escrito y con 68 pruebas en verde** |
 | Probador de cámara y códigos (`tools/prueba-camara`) | ✅ **listo — falta probarlo en tu celular** |
 | Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 38 pruebas en verde** — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
-| API, interfaz web | ⬜ no empezado (el diseño está listo) |
+| Base local en el navegador (`apps/web`) | ✅ **funcionando** — PGlite en un Web Worker, verificado con **dos pestañas abiertas** |
+| API, interfaz de producto | ⬜ no empezado (el diseño está listo) |
 
 Lo que ya funciona hoy, en `packages/core`: aritmética de dinero en centavos
 (`bigint`, sin errores de punto flotante), dígito verificador EAN-13, generación
@@ -29,6 +30,12 @@ Y en `packages/db`: el esquema completo (catálogo, ledger de inventario, ventas
 caja, sincronización, auditoría), los roles y permisos del día 1, y las semillas de
 unidades, tasas y categorías — con un runner que se niega a aplicar una migración
 que ya corrió si alguien la editó después.
+
+Y en `apps/web`: **la base local ya vive en el navegador**. Un Postgres entero
+(WASM) dentro de un Web Worker, con una sola instancia por navegador elegida entre
+pestañas, aplicando las mismas migraciones que el servidor. `pnpm web dev` y ábrela
+en dos pestañas: el panel te dice cuál es la dueña y comprueba que dos pestañas
+escribiendo a la vez no pierden ni una fila.
 
 ---
 
@@ -60,6 +67,11 @@ pnpm core typecheck       # tipos solo del núcleo
 pnpm db test              # solo la base de datos: migraciones, esquema y semillas
 pnpm db test:watch        # modo reloj para las migraciones
 pnpm db typecheck         # tipos solo de la base de datos
+
+pnpm web dev              # levanta la app en http://localhost:5173 (ábrela en 2 pestañas)
+pnpm web test             # pruebas de la app: que el bundle vea las mismas migraciones
+pnpm web build            # build de producción
+pnpm web typecheck        # tipos solo de la app
 
 pnpm certificado          # ⚠️ PRIMERO: crea el certificado para probar la cámara del celular
 pnpm camara               # levanta el probador y te dice qué abrir en el celular
@@ -105,7 +117,13 @@ Papeleria/
 │       ├── servidor.mjs               `pnpm camara`
 │       └── public/                    la página de diagnóstico
 │
-├── apps/                        (vacío por ahora: web y api)
+├── apps/
+│   └── web/                     la app del navegador (por ahora, la capa de datos)
+│       ├── src/db/pglite.worker.ts   el Web Worker dueño de la base
+│       ├── src/db/baseLocal.ts       el cliente tipado (consultar, ejecutar, transacción)
+│       ├── src/db/migraciones.ts     los .sql de packages/db, incrustados por Vite
+│       └── src/diagnostico/          el panel: capas, migraciones, semillas, 2 pestañas
+│
 ├── package.json
 ├── pnpm-workspace.yaml
 └── tsconfig.base.json
@@ -177,8 +195,9 @@ escritas solo en prosa. Las cinco quedaron corregidas; el detalle está en
 
 Lo que sigue, en orden ([`docs/10`](docs/10-roadmap.md), fase F0):
 
-- **0.4 — PGlite en un Web Worker.** Sin esto, dos pestañas abiertas pueden
-  corromper la base: es el riesgo que el propio diseño señala.
+- **0.4 — PGlite en un Web Worker.** ✅ **Hecho**: la base local vive en el navegador,
+  una sola instancia elegida entre pestañas, y está verificado con dos pestañas abiertas
+  escribiendo a la vez. El detalle está en [`apps/web/README.md`](apps/web/README.md).
 - **0.5 — `emitirEvento()` + `outbox`.** Que una venta escriba su estado y su
   evento en una sola transacción.
 - **0.6 — `evaluar()` (RBAC + ABAC)** con la tabla de tests de políticas de

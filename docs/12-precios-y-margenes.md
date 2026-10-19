@@ -102,9 +102,13 @@ CREATE INDEX idx_products_recalkeo ON products(category_id)
   WHERE is_activo AND deleted_at IS NULL AND NOT precio_fijo;
 
 -- ───────────────────────── SEMILLAS ─────────────────────────
+-- ⚠️ Corregido: aquí decía `uuidv7()`, que no existe ni en PostgreSQL 16 ni en
+-- PGlite. Y como las categorías, esta es una fila de REFERENCIA: lleva uuid fijo
+-- literal para que sea la misma en todos los dispositivos (ver 02 §12).
 INSERT INTO margin_rules (id, category_id, nombre, base_margen, margen_pct,
                           margen_minimo_pct, redondeo_a_minor, costo_incluye_iva, is_default)
-VALUES (uuidv7(), NULL, 'Regla general 40 % sobre costo', 'costo', 40.000, 25.000, 50, true, true);
+VALUES ('01900000-0000-7000-8005-000000000001', NULL, 'Regla general 40 % sobre costo',
+        'costo', 40.000, 25.000, 50, true, true);
 ```
 
 ### 3.2 La función (una sola, con tests)

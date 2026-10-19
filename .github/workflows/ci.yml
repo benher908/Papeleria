@@ -1,0 +1,60 @@
+name: CI
+
+# La promesa central del proyecto es que el MISMO archivo de migración corre en
+# PGlite (navegador) y en PostgreSQL 16 (servidor). Esa promesa se rompe sola si
+# nadie la vigila: basta con usar una función que PGlite no trae, y el error
+# aparece en el arranque de la app del mostrador en lugar de aquí.
+#
+# Por eso hay un Postgres de verdad en el flujo: el test de compatibilidad
+# compara los dos catálogos línea a línea, y el job falla si difieren.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pruebas:
+    name: Pruebas y tipos
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: pruebas
+          POSTGRES_DB: papeleria_pruebas
+        ports:
+          - 5432:5432
+        # Sin el healthcheck, el job puede llegar antes de que Postgres acepte
+        # conexiones y el test falla por una razón que no tiene nada que ver.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Lee la versión de pnpm del campo `packageManager` del package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Comprobar tipos
+        run: pnpm typecheck
+
+      - name: Pruebas
+        run: pnpm test
+        env:
+          # ⚠️ El test de compatibilidad destruye y recrea el esquema `public` de
+          #    esta base. Por eso es una base desechable del servicio de arriba.
+          DATABASE_URL_PRUEBAS: postgres://postgres:pruebas@localhost:5432/papeleria_pruebas

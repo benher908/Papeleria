@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "pnpm@12.14.0",
   "engines": {
     "node": ">=22"
   },
@@ -10,6 +11,7 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "core": "pnpm --filter @papeleria/core",
+    "db": "pnpm --filter @papeleria/db",
     "certificado": "node tools/prueba-camara/preparar-certificado.mjs",
     "camara": "node tools/prueba-camara/servidor.mjs"
   }

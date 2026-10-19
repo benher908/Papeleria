@@ -42,7 +42,10 @@ Detalles que importan:
 ## 3. Esquema — Núcleo
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- gen_random_uuid(); en PGlite ya viene
+-- ⚠️ Corregido al implementar la migración 0001: aquí decía
+-- `CREATE EXTENSION IF NOT EXISTS pgcrypto`. Ya no hace falta. Desde PostgreSQL 13
+-- `gen_random_uuid()` es del núcleo, no de pgcrypto, y PGlite puede no traer la
+-- extensión. Quitarlo es una dependencia menos y una incompatibilidad menos.
 
 -- ───────────────────────── CATÁLOGO ─────────────────────────
 
@@ -456,9 +459,13 @@ Para servicios con precio variable (por ejemplo, "impresión: $2 por hoja, 37 ho
 ```sql
 INSERT INTO products (id, sku, nombre, unit_id, precio_minor, tracks_stock, is_activo)
 VALUES
-  (uuidv7(), 'SRV-FOTO-BN', 'Fotocopia blanco y negro (carta)', (SELECT id FROM units WHERE nombre='hoja'), 150, false, true),
-  (uuidv7(), 'SRV-IMPR-BN', 'Impresión blanco y negro (carta)',  (SELECT id FROM units WHERE nombre='hoja'), 200, false, true),
-  (uuidv7(), 'SRV-ENGARGO', 'Engargolado',                       (SELECT id FROM units WHERE nombre='pieza'), 3500, false, true);
+  -- ⚠️ Corregido: aquí decía `uuidv7()`, que NO EXISTE ni en PostgreSQL 16 (llegó
+  -- en la 18) ni en PGlite. `gen_random_uuid()` sí está en el núcleo desde la 13.
+  -- Un producto puede llevar un uuid generado así sin problema: son datos que crea
+  -- el negocio, no catálogo compartido entre dispositivos.
+  (gen_random_uuid(), 'SRV-FOTO-BN', 'Fotocopia blanco y negro (carta)', (SELECT id FROM units WHERE nombre='hoja'), 150, false, true),
+  (gen_random_uuid(), 'SRV-IMPR-BN', 'Impresión blanco y negro (carta)',  (SELECT id FROM units WHERE nombre='hoja'), 200, false, true),
+  (gen_random_uuid(), 'SRV-ENGARGO', 'Engargolado',                       (SELECT id FROM units WHERE nombre='pieza'), 3500, false, true);
 ```
 
 Como **no** generan `stock_movements`, no ensucian el inventario ni el costo promedio. Si algún día quieres saber cuánto papel consumes, se modela como insumo aparte (`producto consumible` que sí controla stock) — pero eso es un problema de contabilidad de insumos, no del POS.
@@ -617,6 +624,20 @@ packages/db/migrations/
   0005_busqueda_fulltext.sql
   0006_precios.sql              -- margin_rules + precio_fijo/margen_override en products (doc 12)
 ```
+
+**Estado:** `0001`–`0003` implementadas y probadas (`packages/db`, 36 pruebas en
+verde). `0004`–`0006` pendientes.
+
+Al escribirlas aparecieron cinco cosas que este documento decía mal y que quedan
+corregidas en los archivos. Ninguna era teórica: las cinco rompían la migración.
+
+| Documento decía | Realidad | Corrección |
+|-----------------|----------|------------|
+| `CREATE EXTENSION pgcrypto` (§3) | Desde PostgreSQL 13 `gen_random_uuid()` es del núcleo; PGlite puede no traer la extensión | Se quitó |
+| Orden narrativo de las tablas (§3→§5→§6) | `stock_movements` (§4) referencia `product_presentations` (§5), `users` y `devices` (§6), que se definen después. Postgres exige que la tabla referenciada exista antes | `0001` las ordena por dependencia |
+| `uuidv7()` en las semillas (§8 y doc 06 §3.4) | No existe en PostgreSQL 16 ni en PGlite. Y en datos de referencia era además un error de diseño: cada dispositivo habría creado el mismo rol con otro uuid | UUID literales y fijos |
+| `CREATE INDEX … WHERE expira_at > now()` (doc 06 §6) | Los predicados de índice exigen funciones `IMMUTABLE` y `now()` es `STABLE`: el motor lo rechaza | Índice sobre `(user_id, expira_at)` |
+| El catálogo de motivos y la regla de las notas (§4.1) estaban en prosa | Escrito solo en la interfaz, cualquier script lo viola | `CHECK` de catálogo cerrado + notas obligatorias de 10 caracteres en `ajuste_manual` y `merma` |
 
 Reglas para que PGlite y Postgres acepten **el mismo archivo**:
 

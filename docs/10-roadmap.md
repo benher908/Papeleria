@@ -64,7 +64,7 @@ gantt
 |---|-----------|------------------------|--------|
 | 0.1 | Monorepo con pnpm workspaces | `pnpm -r build` compila los 3 paquetes | 🟡 monorepo y workspaces listos; faltan `apps/*` |
 | 0.2 | `packages/core` con dominio y dinero | `bigint` en centavos + `roundHalfUp` con tests | ✅ **68 pruebas en verde** (+ EAN-13, precios y totales) |
-| 0.3 | `packages/db/migrations/0001..0003` | Se aplican en **PGlite y Postgres**, verificado en CI | ⬜ |
+| 0.3 | `packages/db/migrations/0001..0003` | Se aplican en **PGlite y Postgres**, verificado en CI | ✅ **36 pruebas en verde**: runner, esquema y semillas. El flujo de CI ya levanta un Postgres 16; falta empujarlo a GitHub para que corra la mitad que compara los dos motores |
 | 0.4 | **PGlite en Web Worker** con cliente tipado | Dos pestañas abiertas **no** corrompen la BD | ⬜ |
 | 0.5 | `emitirEvento()` + `outbox` | Una venta de prueba escribe estado + evento en una transacción | ⬜ |
 | 0.6 | `evaluar()` (RBAC+ABAC) con un rol | Tabla de tests de políticas en verde | ⬜ |

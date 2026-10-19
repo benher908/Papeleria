@@ -163,11 +163,20 @@ Resiste la tentación de crear 150 permisos. Con ~28 cubres todo, y cada permiso
 ```sql
 -- Se siembran los 4 roles aunque hoy solo uses uno.
 -- Un rol sin usuarios no cuesta nada y estar listo en julio vale todo.
+--
+-- ⚠️ Corregido: aquí decía `uuidv7()`, que NO EXISTE ni en PostgreSQL 16 (llegó en
+-- la 18) ni en PGlite. Pero el problema de fondo no era la función que falta, sino
+-- que usarla habría sido un ERROR DE DISEÑO aunque existiera: los roles son datos
+-- de referencia COMPARTIDOS. Con un uuid aleatorio, el mismo rol 'dueno' tendría un
+-- id distinto en el PC y en el celular, el servidor vería dos filas
+-- irreconciliables al sincronizar, y el catálogo se partiría en dos en silencio.
+-- Por eso van literales fijos: el uuid de 'dueno' es el mismo en todos los
+-- dispositivos, siempre. Ver packages/db/migrations/0002_rbac_abac.sql.
 INSERT INTO roles (id, clave, nombre, descripcion, is_sistema, nivel) VALUES
-  (uuidv7(), 'dueno',   'Dueño',   'Acceso total. Único rol que edita políticas y usuarios.', true, 100),
-  (uuidv7(), 'cajero',  'Cajero',  'Vende y cobra. No ve costos ni márgenes.',                  true, 20),
-  (uuidv7(), 'bodega',  'Bodega',  'Inventario, conteos, etiquetas. No vende ni ve precios.',    true, 20),
-  (uuidv7(), 'auditor', 'Auditor', 'Solo lectura de reportes y auditoría.',                      true, 10);
+  ('01900000-0000-7000-8000-000000000001', 'dueno',   'Dueño',   'Acceso total. Único rol que edita políticas y usuarios.', true, 100),
+  ('01900000-0000-7000-8000-000000000002', 'cajero',  'Cajero',  'Vende y cobra. No ve costos ni márgenes.',                  true, 20),
+  ('01900000-0000-7000-8000-000000000003', 'bodega',  'Bodega',  'Inventario, conteos, etiquetas. No vende ni ve precios.',    true, 20),
+  ('01900000-0000-7000-8000-000000000004', 'auditor', 'Auditor', 'Solo lectura de reportes y auditoría.',                      true, 10);
 ```
 
 Hoy, la única fila de `user_roles` es `(dueña, dueno)`. Listo.
@@ -277,7 +286,7 @@ Estas son las que implementaría. Están escritas en lenguaje natural porque el 
 | P19 | Emparejar un nuevo escáner | 🟡 Permitir | `step_up` *(la sesión de caja debe tener auth reciente)* |
 | P20 | Ver costos y márgenes | 🔴 Denegar si el rol no incluye `precios:ver_costos` | — |
 | P21 | Editar políticas o crear usuarios | 🟡 Permitir *(solo `dueno`)* | `step_up` |
-| P22 | Revocar un dispositivo | 🟢 Permitir siempre | — *(quitar acceso nunca debe requerir permiso: en una emergencia tienes que poder cortar)* |
+| P22 | Revocar un dispositivo | 🟢 Permitir **sin step-up** | — *(quitar acceso nunca debe requerir una autorización extra: en una emergencia hay que poder cortar ya. Ojo, "sin step-up" no es "para cualquier rol": §3.3 lo da al dueño y al cajero, y no a bodega ni auditor — un auditor que puede revocar dispositivos deja de ser auditor)* |
 | P23 | Consultar auditoría | 🟡 Permitir *(solo `dueno`, `auditor`)* | — |
 | P24 | Modificar un conteo ya **aplicado** | 🔴 Denegar | — *(se corrige con un movimiento nuevo)* |
 
@@ -448,7 +457,14 @@ CREATE TABLE step_up_grants (
   ip            inet,
   device_id     uuid REFERENCES devices(id)
 );
-CREATE INDEX idx_stepup_vigente ON step_up_grants(user_id, expira_at) WHERE expira_at > now();
+-- ⚠️ Corregido: aquí decía `... WHERE expira_at > now()`. Postgres RECHAZA ese
+-- predicado: en un índice parcial las funciones tienen que ser IMMUTABLE y `now()`
+-- es STABLE (cambia en cada transacción). El error es
+--   "functions in index predicate must be marked IMMUTABLE".
+-- El índice sirve igual sin el predicado: la consulta pregunta por
+-- (user_id, expira_at) y compara contra el reloj en su propio WHERE.
+CREATE INDEX idx_stepup_vigente ON step_up_grants(user_id, expira_at DESC);
+CREATE INDEX idx_stepup_sesion  ON step_up_grants(session_id);
 ```
 
 **Anti-fuerza bruta del PIN — tres capas, no una:**

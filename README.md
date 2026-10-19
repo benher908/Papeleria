@@ -17,12 +17,18 @@ celular. También es el punto de venta.
 | Diseño completo (12 documentos) | ✅ terminado — [`docs/`](docs/README.md) |
 | Núcleo: dinero, códigos de barras, precios, totales | ✅ **escrito y con 68 pruebas en verde** |
 | Probador de cámara y códigos (`tools/prueba-camara`) | ✅ **listo — falta probarlo en tu celular** |
-| Base de datos, API, interfaz web | ⬜ no empezado (el diseño está listo) |
+| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 36 pruebas en verde** — el mismo SQL en PGlite y en Postgres 16 |
+| API, interfaz web | ⬜ no empezado (el diseño está listo) |
 
 Lo que ya funciona hoy, en `packages/core`: aritmética de dinero en centavos
 (`bigint`, sin errores de punto flotante), dígito verificador EAN-13, generación
 de códigos internos, motor de precios con IVA y margen, y totales de venta con
 desglose de impuestos y sugerencia de cambio.
+
+Y en `packages/db`: el esquema completo (catálogo, ledger de inventario, ventas,
+caja, sincronización, auditoría), los roles y permisos del día 1, y las semillas de
+unidades, tasas y categorías — con un runner que se niega a aplicar una migración
+que ya corrió si alguien la editó después.
 
 ---
 
@@ -50,6 +56,10 @@ pnpm typecheck            # verificar tipos en todo el repositorio
 pnpm core test            # solo el núcleo
 pnpm core test:watch      # modo reloj: re-corre al guardar (úsalo mientras programas)
 pnpm core typecheck       # tipos solo del núcleo
+
+pnpm db test              # solo la base de datos: migraciones, esquema y semillas
+pnpm db test:watch        # modo reloj para las migraciones
+pnpm db typecheck         # tipos solo de la base de datos
 
 pnpm certificado          # ⚠️ PRIMERO: crea el certificado para probar la cámara del celular
 pnpm camara               # levanta el probador y te dice qué abrir en el celular
@@ -80,11 +90,14 @@ Papeleria/
 │   └── 12-precios-y-margenes.md   markup vs margen, IVA, recálculos
 │
 ├── packages/
-│   └── core/                    ⭐ el núcleo: sin dependencias de plataforma
-│       ├── src/dinero.ts        centavos, redondeo, IVA, formato, parseo
-│       ├── src/codigos-barras/ean13.ts
-│       ├── src/precios/calcularPrecio.ts
-│       └── src/ventas/totales.ts
+│   ├── core/                    ⭐ el núcleo: sin dependencias de plataforma
+│   │   ├── src/dinero.ts        centavos, redondeo, IVA, formato, parseo
+│   │   ├── src/codigos-barras/ean13.ts
+│   │   ├── src/precios/calcularPrecio.ts
+│   │   └── src/ventas/totales.ts
+│   └── db/                      el esquema: un solo .sql para los dos motores
+│       ├── migrations/          0001_init · 0002_rbac_abac · 0003_seed_catalogos
+│       └── src/runner.ts        aplica las migraciones y detecta divergencias
 │
 ├── tools/
 │   └── prueba-camara/           probador de la tarea 0.9 (se puede borrar cuando ya no haga falta)
@@ -135,12 +148,29 @@ Si eso funciona, el riesgo desaparece y se puede construir. Receta manual (sin l
 herramienta) en [`docs/11 §1`](docs/11-despliegue-gratuito.md) y
 [`docs/04`](docs/04-escaneo-movil.md).
 
-### 2. Base de datos: esquema y migraciones
+### 2. Base de datos: esquema y migraciones — ✅ hecho
 
-`docs/02-modelo-de-datos.md` tiene el SQL. Se crea como migraciones numeradas
-(`0001_esquema.sql` … `0006_precios.sql`) y corre **igual** en PGlite (en el
-navegador) y en PostgreSQL 16 (en el servidor). Si una migración solo funciona en
-uno de los dos, está mal.
+`packages/db` ya tiene las migraciones `0001`–`0003` y 36 pruebas en verde. El
+esquema está descrito en `docs/02` y `docs/06`, y la regla que lo sostiene todo es
+una: **el mismo archivo .sql corre en PGlite (el navegador) y en PostgreSQL 16 (el
+servidor)**. Si una migración funcionara solo en uno de los dos, hay un test que lo
+dice.
+
+Al escribirlas aparecieron **cinco errores en los documentos**: una extensión que ya
+no hace falta, `uuidv7()` que no existe en ninguna de las dos versiones, un orden
+de tablas que no compila, un índice con un predicado que el motor rechaza, y reglas
+de negocio (el catálogo de motivos, las notas obligatorias del ajuste manual)
+escritas solo en prosa. Las cinco quedaron corregidas; el detalle está en
+`docs/02 §12`.
+
+Lo que sigue, en orden ([`docs/10`](docs/10-roadmap.md), fase F0):
+
+- **0.4 — PGlite en un Web Worker.** Sin esto, dos pestañas abiertas pueden
+  corromper la base: es el riesgo que el propio diseño señala.
+- **0.5 — `emitirEvento()` + `outbox`.** Que una venta escriba su estado y su
+  evento en una sola transacción.
+- **0.6 — `evaluar()` (RBAC + ABAC)** con la tabla de tests de políticas de
+  `docs/06 §9`.
 
 ### 3. La caja (POS) primero, el inventario después
 

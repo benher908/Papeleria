@@ -56,13 +56,14 @@ describe('los dos caminos producen lo mismo', () => {
     expect(desdeMemoria).toEqual(desdeDisco);
   });
 
-  test('las tres migraciones actuales, con su hash', async () => {
+  test('las cuatro migraciones actuales, con su hash', async () => {
     const migraciones = await cargarMigraciones(DIR_MIGRACIONES);
 
     expect(migraciones.map((m) => m.nombre)).toEqual([
       '0001_init.sql',
       '0002_rbac_abac.sql',
       '0003_seed_catalogos.sql',
+      '0004_eventos.sql',
     ]);
     for (const migracion of migraciones) {
       expect(migracion.hash).toMatch(/^[0-9a-f]{64}$/);

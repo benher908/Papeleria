@@ -13,3 +13,7 @@ export * from './dinero';
 export * from './codigos-barras/ean13';
 export * from './precios/calcularPrecio';
 export * from './ventas/totales';
+export * from './ids/azar';
+export * from './ids/ulid';
+export * from './ids/uuidv7';
+export * from './sync/hlc';

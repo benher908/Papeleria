@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",
+    "@papeleria/core": "workspace:*",
     "@papeleria/db": "workspace:*"
   },
   "devDependencies": {

@@ -9,6 +9,8 @@
  *   `hash`         SHA-256 por WebCrypto, igual en Node y en el navegador
  *   `esquema`      lee el catálogo y compara PGlite contra Postgres línea a línea
  *   `adaptadores`  envuelve PGlite o `pg` en la interfaz mínima que el runner espera
+ *   `contadores`   device_seq, HLC y folio local: números sin huecos y sin repetir
+ *   `eventos`      `emitirEvento()`: estado + evento + auditoría en una transacción
  *
  * Todo lo de arriba es seguro en el navegador. Lo que NO lo es vive aparte:
  * `archivos` usa `node:fs` para leer los .sql del disco y se importa de
@@ -21,3 +23,5 @@ export * from './migraciones';
 export * from './hash';
 export * from './esquema';
 export * from './adaptadores';
+export * from './contadores';
+export * from './eventos';

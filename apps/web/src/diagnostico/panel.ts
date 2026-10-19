@@ -11,6 +11,13 @@
 import { DIRECTORIO_POR_DEFECTO, baseLocal, type BaseLocal } from '../db/baseLocal';
 import { comprobarCatalogo } from './catalogo';
 import { ejecutarPrueba, reiniciar, type ResultadoPrueba } from './multipestana';
+import {
+  borrarDatosDePrueba,
+  emitirVentaDePrueba,
+  fotoDeLaBase,
+  sinCambios,
+  type ResultadoEmision,
+} from './outbox';
 
 type Celda = string | Node;
 
@@ -62,6 +69,7 @@ export async function montarPanel(raiz: HTMLElement): Promise<void> {
   panel.append(seccionMigraciones());
   panel.append(seccionEsquema());
   panel.append(seccionDosPestanas());
+  panel.append(seccionOutbox());
 
   const cuerpoVersion = crear('p', 'nota');
   panel.append(cuerpoVersion);
@@ -121,7 +129,8 @@ export async function montarPanel(raiz: HTMLElement): Promise<void> {
 
         const huerfanas = await base.consultar<{ nombre: string }>(
           `SELECT nombre FROM schema_migrations
-            WHERE nombre NOT IN ('0001_init.sql', '0002_rbac_abac.sql', '0003_seed_catalogos.sql')`,
+            WHERE nombre NOT IN ('0001_init.sql', '0002_rbac_abac.sql',
+                                 '0003_seed_catalogos.sql', '0004_eventos.sql')`,
         );
         if (huerfanas.length > 0) {
           cuerpo.append(
@@ -238,6 +247,85 @@ export async function montarPanel(raiz: HTMLElement): Promise<void> {
     void correr();
     return seccion;
   }
+
+  // ── sección 4: estado + evento en una transacción ─────────────────────────
+  function seccionOutbox(): HTMLElement {
+    const { seccion, cuerpo } = tarjeta(
+      '4 · Estado y evento, en una sola transacción',
+      'Una venta escribe las cuatro cosas juntas: la venta, sus líneas, el movimiento de stock, el evento en la cola y su auditoría. O entran todas, o no entra ninguna.',
+    );
+
+    cuerpo.append(
+      crear(
+        'p',
+        'explicacion',
+        'El segundo botón escribe el estado completo y revienta a propósito justo después. Si el mecanismo está bien, la foto de abajo tiene que quedar idéntica a la de antes, contadores incluidos: ni un folio gastado, ni un hueco en device_seq.',
+      ),
+    );
+
+    const caja = crear('div', 'prueba');
+    cuerpo.append(caja);
+
+    const botones = crear('div', 'botones');
+    const vender = crear('button', 'boton', 'Vender (tiene que entrar)');
+    const fallar = crear('button', 'boton secundario', 'Vender y fallar a mitad (no debe entrar nada)');
+    const limpiar = crear('button', 'boton secundario', 'Borrar datos de prueba');
+    botones.append(vender, fallar, limpiar);
+    cuerpo.append(botones);
+
+    let ocupado = false;
+
+    async function correr(modo: 'correcto' | 'fallar'): Promise<void> {
+      if (ocupado) return;
+      ocupado = true;
+      vender.disabled = true;
+      fallar.disabled = true;
+      limpiar.disabled = true;
+      caja.replaceChildren(crear('p', 'trabajando', 'Escribiendo…'));
+
+      try {
+        const resultado = await emitirVentaDePrueba(base, modo === 'fallar');
+        caja.replaceChildren(informeEmision(resultado, modo));
+      } catch (causa) {
+        caja.replaceChildren(aviso('La prueba no se pudo ejecutar', [mensaje(causa)]));
+      } finally {
+        ocupado = false;
+        vender.disabled = false;
+        fallar.disabled = false;
+        limpiar.disabled = false;
+      }
+    }
+
+    vender.addEventListener('click', () => void correr('correcto'));
+    fallar.addEventListener('click', () => void correr('fallar'));
+
+    limpiar.addEventListener('click', () => {
+      void (async () => {
+        if (ocupado) return;
+        ocupado = true;
+        limpiar.disabled = true;
+        try {
+          await borrarDatosDePrueba(base);
+          const foto = await fotoDeLaBase(base);
+          caja.replaceChildren(
+            crear(
+              'p',
+              'nota',
+              `Datos de prueba borrados. La base quedó como recién migrada: ` +
+                `${foto.ventas} ventas, ${foto.enCola} eventos en la cola, ${foto.auditoria} entradas de auditoría, último folio ${foto.ultimoFolio}.`,
+            ),
+          );
+        } catch (causa) {
+          caja.replaceChildren(aviso('No se pudieron borrar los datos de prueba', [mensaje(causa)]));
+        } finally {
+          ocupado = false;
+          limpiar.disabled = false;
+        }
+      })();
+    });
+
+    return seccion;
+  }
 }
 
 // ─────────────────────────────── piezas ───────────────────────────────
@@ -292,6 +380,56 @@ function informe(resultado: ResultadoPrueba): HTMLElement {
         'Ojo: cuadra, pero las filas de la otra pestaña no cayeron dentro de mi ventana. Hubo dos pestañas, aunque quizá no se pisaron de verdad. Pulsa Repetir en las dos a la vez para forzarlo.',
       ),
     );
+  }
+
+  return caja;
+}
+
+/**
+ * La foto antes/después de la sección 4.
+ *
+ * La tabla es el argumento: cuando el fallo es limpio, las dos columnas son idénticas.
+ * No hay que creerle a un mensaje verde, se ve número por número.
+ */
+function informeEmision(resultado: ResultadoEmision, modo: 'correcto' | 'fallar'): HTMLElement {
+  const caja = crear('div', 'resultado');
+  const igual = sinCambios(resultado.antes, resultado.despues);
+
+  let clase: 'correcto' | 'fallo';
+  let texto: string;
+
+  if (modo === 'correcto') {
+    const entro = resultado.error === null && resultado.evento !== null;
+    clase = entro ? 'correcto' : 'fallo';
+    texto = entro
+      ? `Entró todo: folio ${resultado.evento?.payload.folio_local ?? '—'} y su evento en la cola.`
+      : `No se pudo vender: ${resultado.error ?? 'no apareció el evento'}`;
+  } else {
+    clase = igual ? 'correcto' : 'fallo';
+    texto = igual
+      ? 'No entró nada. La base quedó exactamente como estaba, contadores incluidos.'
+      : 'Quedó algo a medias: la transacción NO revirtió todo.';
+  }
+
+  const veredicto = crear('div', `veredicto ${clase}`);
+  veredicto.append(crear('strong', undefined, texto));
+  caja.append(veredicto);
+
+  const { antes, despues } = resultado;
+  const filas: (readonly string[])[] = [
+    ['ventas', String(antes.ventas), String(despues.ventas)],
+    ['líneas de venta', String(antes.lineas), String(despues.lineas)],
+    ['movimientos de stock', String(antes.movimientos), String(despues.movimientos)],
+    ['eventos en la cola', String(antes.enCola), String(despues.enCola)],
+    ['entradas de auditoría', String(antes.auditoria), String(despues.auditoria)],
+    ['device_seq', String(antes.ultimoSeq), String(despues.ultimoSeq)],
+    ['último folio local', antes.ultimoFolioLocal ?? '—', despues.ultimoFolioLocal ?? '—'],
+  ];
+
+  caja.append(tabla(['qué', 'antes', 'después'], filas));
+
+  if (resultado.error !== null) {
+    caja.append(crear('p', 'nota', `Error recibido: ${resultado.error}`));
   }
 
   return caja;

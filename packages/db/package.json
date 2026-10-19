@@ -14,6 +14,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@papeleria/core": "workspace:*"
+  },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.10",
     "@types/node": "^26.6.5",

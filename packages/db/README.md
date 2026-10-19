@@ -9,11 +9,14 @@ migrations/
   0001_init.sql             esquema núcleo: catálogo, ledger, ventas, sync, auditoría
   0002_rbac_abac.sql        roles, permisos, políticas, step-up + semillas de RBAC
   0003_seed_catalogos.sql   unidades, tasas de impuesto, categorías, configuración
+  0004_eventos.sql          device_counters, folio_counters y devices.codigo
 src/
   runner.ts                 aplica las migraciones y detecta divergencias
   archivos.ts               lee los .sql desde disco (sólo Node)
   esquema.ts                lee el catálogo y compara motor contra motor
   adaptadores.ts            envuelve PGlite o pg en la interfaz que el runner espera
+  contadores.ts             device_seq, HLC y folio local: sin huecos y sin repetir
+  eventos.ts                emitirEvento(): estado + evento + auditoría en una transacción
 ```
 
 ## Uso
@@ -34,6 +37,69 @@ En el navegador (PGlite): se importan los `.sql` como texto con Vite, se arma la
 misma lista `Migracion[]` y se llama al mismo `migrar()`. Por eso `runner.ts` no
 importa nada de Node.
 
+## `emitirEvento()`: el único camino de mutación
+
+Cualquier cambio del negocio —una venta, un ajuste de stock, un cambio de precio— pasa
+por aquí. Escribe **estado + evento + auditoría en una sola transacción**: o entra todo,
+o no entra nada. Es lo que impide el fallo clásico de «se guardó la venta y se cortó la
+luz antes de encolarla», que en un sistema offline significa una venta que nunca llega
+al servidor.
+
+```ts
+import { emitirEvento, siguienteFolioLocal } from '@papeleria/db';
+
+const evento = await emitirEvento<'sale.created', PayloadVenta>(cliente, {
+  tipo: 'sale.created',
+  dispositivoId: ID_TERMINAL,
+  usuarioId: ID_USUARIO,
+
+  // Obligatorio y sin valor por defecto: mientras no exista `evaluar()` (tarea 0.6)
+  // el sistema no puede emitir eventos, y eso es lo correcto. Un «permitir todo»
+  // escondido en la biblioteca sería justo el agujero que este diseño evita.
+  autorizar: async (evento) => evaluar(evento),
+
+  // Se ejecuta DENTRO de la transacción. Por eso el folio se asigna aquí y no antes:
+  // si el resto fallara, el número de ticket se revierte con todo lo demás y no queda
+  // un hueco que parece una venta borrada.
+  payload: async (tx, datos) => ({
+    venta_id: uuidV7(),
+    folio_local: await siguienteFolioLocal(tx, datos.device_id),
+    total_minor: 4500,
+  }),
+
+  aplicarEstado: async (tx, evento) => {
+    await tx.query(
+      `INSERT INTO sales (id, folio_local, …, device_id, evento_id, ocurrido_at)
+       VALUES ($1, $2, …, $3, $4, $5)`,
+      [
+        evento.payload.venta_id,
+        evento.payload.folio_local,
+        evento.device_id,
+        // ⭐ La venta queda atada a su evento. Por esto `aplicarEstado` recibe el
+        // evento completo y no va sin argumentos.
+        evento.event_id,
+        evento.occurred_at,
+      ],
+    );
+  },
+});
+```
+
+Qué garantiza, y cómo se comprueba (`src/eventos.test.ts`, 10 pruebas):
+
+| Propiedad | Cómo se fija |
+|-----------|--------------|
+| Estado y evento entran juntos | La venta de prueba escribe venta, líneas, movimiento de stock, `outbox` y `audit_log`; se comprueba que `sales.evento_id == outbox.event_id` |
+| Si el estado falla, no queda nada | Se revienta a propósito después de escribir; ni una fila, y los contadores **ni siquiera existen** (el `INSERT` que los crea también se revirtió) |
+| Ni un `device_seq` ni un folio gastado | Tras un fallo, el siguiente evento usa el número que le tocaba, no el siguiente |
+| El HLC nunca retrocede | Con el reloj inyectado saltando a 2010, los HLC siguen creciendo |
+| Un evento denegado no escribe nada | `autorizar` devuelve `permitido: false` y el error lleva el motivo |
+
+Los números los lleva `contadores.ts`: `siguienteSeqYHlc()` (el `device_seq` y el último
+HLC, en la misma fila y con cerrojo) y `siguienteFolioLocal()` (el folio visible de la
+terminal). Los tres viven en `device_counters` / `folio_counters`, que son estado **local
+del dispositivo** — igual que `outbox` y `sync_cursors`, no se sincronizan.
+
 ## Lo que el runner garantiza
 
 | Garantía | Por qué importa |
@@ -53,9 +119,19 @@ pnpm test                 # PGlite, sin dependencias externas
 Para incluir el PostgreSQL real (destruye el esquema `public` de esa base):
 
 ```bash
-docker run --rm -d -p 5432:5432 -e POSTGRES_PASSWORD=pruebas -e POSTGRES_DB=papeleria_pruebas postgres:16-alpine
-DATABASE_URL_PRUEBAS=postgres://postgres:pruebas@localhost:5432/papeleria_pruebas pnpm test
+docker run --rm -d --name papeleria-pruebas-pg -p 55432:5432 \
+  -e POSTGRES_PASSWORD=pruebas -e POSTGRES_DB=papeleria_pruebas postgres:16-alpine
+DATABASE_URL_PRUEBAS=postgres://postgres:pruebas@localhost:55432/papeleria_pruebas pnpm test
+docker rm -f papeleria-pruebas-pg
 ```
+
+> Se usa el **55432** y no el 5432 a propósito: en esta máquina hay un PostgreSQL
+> nativo escuchando en el 5432, y el test **borra** el esquema `public` de la base a
+> la que se conecta. Con el puerto cambiado, es imposible que le pegue al de verdad.
+
+Sin `DATABASE_URL_PRUEBAS` las dos pruebas que necesitan el motor real se **saltan**
+(aparecen como `skipped`); el resto corre igual contra PGlite. Son 58 pruebas contra
+PostgreSQL y 56 + 2 saltadas con sólo PGlite.
 
 El test levanta un PGlite limpio, aplica las migraciones, hace lo mismo en el
 Postgres, y compara los dos catálogos línea a línea (tablas, columnas con su tipo
@@ -114,6 +190,13 @@ unidades, `8003` tasas de impuesto, `8004` categorías.
 
 ## Qué falta aquí a propósito
 
+- **`autorizar` no tiene implementación por defecto, ni siquiera una que permita
+  todo.** `emitirEvento()` la exige en cada llamada. Es incómodo a propósito:
+  mientras no exista `evaluar()` (tarea 0.6), el sistema **no puede emitir
+  eventos**. La alternativa —traer una política de cortesía que devuelva
+  `permitido: true`— es la que se olvida de borrar y acaba en producción. En
+  `eventos.test.ts` la que permite todo se declara dentro del archivo de prueba,
+  con su comentario, y no se exporta.
 - **Las 31 políticas del doc 06 §5 no se siembran todavía.** La gramática de
   `condicion` que necesitan no está especificada en los documentos: P1 ("precio
   nuevo menor al costo") necesita comparar dos campos del contexto entre sí y las

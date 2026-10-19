@@ -304,6 +304,7 @@ CREATE TABLE devices (
   user_id        uuid REFERENCES users(id),
   nombre         text NOT NULL,         -- 'PC caja 1', 'Celular Samsung A54'
   tipo           text NOT NULL,         -- 'terminal' | 'scanner' | 'server'
+  codigo         text,                  -- 'C1': prefijo del folio. Nulo si no vende (0004)
   huella         text,                  -- hash del fingerprint (no es identidad, es contexto)
   is_trusted     boolean NOT NULL DEFAULT false,
   pairing_code   text,                  -- código de emparejamiento, uso único
@@ -531,6 +532,24 @@ CREATE TABLE sync_cursors (           -- qué ha visto cada dispositivo
   ultimo_error   text
 );
 
+-- Las dos de la migración 0004. Igual que outbox y sync_cursors, son estado LOCAL del
+-- dispositivo: no se sincronizan. Guardan lo que tiene que ser monótono y sin huecos.
+-- (Se añadieron en la fase 0.5: el diseño las citaba pero no existían en el esquema.)
+CREATE TABLE device_counters (        -- en el DISPOSITIVO
+  device_id      uuid PRIMARY KEY REFERENCES devices(id),
+  ultimo_seq     bigint NOT NULL DEFAULT 0,  -- último device_seq entregado
+  ultimo_hlc     text,                       -- último reloj lógico emitido
+  actualizado_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (ultimo_seq >= 0)
+);
+
+CREATE TABLE folio_counters (         -- en el DISPOSITIVO
+  device_id      uuid PRIMARY KEY REFERENCES devices(id),
+  ultimo_folio   bigint NOT NULL DEFAULT 0,  -- último folio visible entregado
+  actualizado_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (ultimo_folio >= 0)
+);
+
 CREATE TABLE outbox (                 -- en el DISPOSITIVO, no en el servidor
   id           uuid PRIMARY KEY,
   event_id     text NOT NULL UNIQUE,
@@ -561,7 +580,9 @@ CREATE TABLE settings (               -- configuración de la papelería
 );
 -- Semillas: nombre_negocio, rfc, direccion, telefono, moneda='MXN',
 --          iva_por_defecto=0.16, precio_incluye_iva=true,
---          prefijo_folio='PAP', ancho_ticket_mm=58,
+--          prefijo_folio='PAP' ⚠️ SIN USO: ver docs/08 §6, el prefijo vigente es
+--          devices.codigo (por terminal, es el único que evita folios repetidos),
+--          ancho_ticket_mm=58,
 --          prefijo_codigo_interno='200', dias_para_devolucion=7
 ```
 

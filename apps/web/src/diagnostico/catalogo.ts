@@ -19,8 +19,28 @@ export interface Comprobacion {
 export const COMPROBACIONES: readonly Comprobacion[] = [
   {
     que: 'tablas en public',
-    esperado: 34,
+    esperado: 36,
     sql: `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname = 'public'`,
+  },
+  // Las tres de 0004. Se comprueban por nombre y no sólo en el total: un recuento
+  // que cuadra por casualidad (una tabla de más y otra de menos) no se vería.
+  {
+    que: 'tabla device_counters',
+    esperado: 1,
+    sql: `SELECT count(*)::int AS n FROM pg_tables
+           WHERE schemaname = 'public' AND tablename = 'device_counters'`,
+  },
+  {
+    que: 'tabla folio_counters',
+    esperado: 1,
+    sql: `SELECT count(*)::int AS n FROM pg_tables
+           WHERE schemaname = 'public' AND tablename = 'folio_counters'`,
+  },
+  {
+    que: 'columna devices.codigo',
+    esperado: 1,
+    sql: `SELECT count(*)::int AS n FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'devices' AND column_name = 'codigo'`,
   },
   { que: 'roles', esperado: 4, sql: 'SELECT count(*)::int AS n FROM roles' },
   { que: 'permisos', esperado: 44, sql: 'SELECT count(*)::int AS n FROM permissions' },

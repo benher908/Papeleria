@@ -63,17 +63,17 @@ gantt
 | # | Entregable | Criterio de "terminado" | Estado |
 |---|-----------|------------------------|--------|
 | 0.1 | Monorepo con pnpm workspaces | `pnpm -r build` compila los 3 paquetes | 🟡 workspaces listos y **`apps/web` creado**; falta `apps/api` |
-| 0.2 | `packages/core` con dominio y dinero | `bigint` en centavos + `roundHalfUp` con tests | ✅ **68 pruebas en verde** (+ EAN-13, precios y totales) |
-| 0.3 | `packages/db/migrations/0001..0003` | Se aplican en **PGlite y Postgres**, verificado en CI | ✅ **38 pruebas en verde**, y verificado también a mano contra un PostgreSQL 16.14 real: los dos motores acaban con el **mismo esquema, línea por línea** (tablas, columnas con tipo y `NOT NULL`, índices, restricciones, funciones y disparadores). El flujo de CI levanta ese mismo Postgres; falta empujarlo a GitHub para que corra solo |
+| 0.2 | `packages/core` con dominio y dinero | `bigint` en centavos + `roundHalfUp` con tests | ✅ **103 pruebas en verde** (+ EAN-13, precios y totales; y desde 0.5: ULID, UUID v7 y el reloj lógico híbrido) |
+| 0.3 | `packages/db/migrations/0001..0003` | Se aplican en **PGlite y Postgres**, verificado en CI | ✅ **38 pruebas en verde** (hoy 58, con la 0004), y verificado también a mano contra un PostgreSQL 16.14 real: los dos motores acaban con el **mismo esquema, línea por línea** (tablas, columnas con tipo y `NOT NULL`, índices, restricciones, funciones y disparadores). El flujo de CI levanta ese mismo Postgres; falta empujarlo a GitHub para que corra solo |
 | 0.4 | **PGlite en Web Worker** con cliente tipado | Dos pestañas abiertas **no** corrompen la BD | ✅ **Verificado en un navegador real, con dos pestañas abiertas.** Una es *líder* y la otra *seguidora*; ninguna consulta se entrelaza. En la prueba de estrés —las dos peleando por la misma fila— **261 transacciones en 4 s**, `contador == marcas` exacto y **0 filas perdidas**. Y al cerrar la pestaña líder, otra toma el relevo sin que se note. De paso apareció la restricción que más se siente: en el modo por defecto PGlite **espera el volcado a disco después de cada consulta** (3 transacciones/s frente a 64 con `relaxedDurability`). Se usa `relaxedDurability` y se fuerza el volcado con `sincronizar()` sólo cuando el dato tiene que estar a salvo. Detalle y mediciones en [`apps/web/README.md`](../apps/web/README.md) |
-| 0.5 | `emitirEvento()` + `outbox` | Una venta de prueba escribe estado + evento en una transacción | ⬜ |
+| 0.5 | `emitirEvento()` + `outbox` | Una venta de prueba escribe estado + evento en una transacción | ✅ **Hecho y verificado en cuatro sitios.** La venta de prueba escribe venta, líneas, movimiento de stock, evento en la cola y auditoría; forzando un fallo **después** de escribir el estado, la base queda idéntica, contadores incluidos (ni un folio gastado, ni un hueco en `device_seq`). El HLC no retrocede aunque el reloj del PC se vaya a 2010. Probado contra **PGlite** y contra **PostgreSQL 16.14 real**, y a mano en el navegador (sección 4 del panel de diagnóstico). De paso apareció lo que el diseño daba por hecho y no existía: `device_counters`, `folio_counters` y `devices.codigo` (migración `0004_eventos.sql`) |
 | 0.6 | `evaluar()` (RBAC+ABAC) con un rol | Tabla de tests de políticas en verde | ⬜ |
 | 0.7 | Login mínimo (contraseña argon2id + cookie httpOnly) | Entras, la sesión persiste, `logout` funciona | ⬜ |
 | 0.8 | `useBarcodeWedge` (HID) | Un lector de $25 o un script que simule pulsaciones imprime el código en consola | ⬜ |
 | 0.9 | **Prueba de riesgo: cámara en el celular** | Un `<video>` que lea un EAN-13 con `BarcodeDetector` **en HTTPS** | 🟡 **herramienta lista** — falta probarla en tu celular |
 
-> **Orden sugerido a partir de hoy:** 0.9 (riesgo) → 0.3 → 0.4 → 0.6 → los demás.
-> La 0.2 ya está hecha y era la única que se podía adelantar sin decidir nada más.
+> **Lo que queda de F0:** 0.9 (la prueba de cámara, que es la de riesgo) → 0.6 → 0.7 → 0.8.
+> 0.2, 0.3, 0.4 y 0.5 ya están hechas.
 
 ### La tarea 0.9 es la más importante de esta fase
 
@@ -405,7 +405,9 @@ Si de todo el documento solo puedes ejecutar tres cosas:
 2. **Compra el UPS ($50) y el lector HID ($25).** El UPS protege lo que ya tienes; el lector va a hacer que el sistema sea agradable desde el primer día.
 3. **Exporta tu inventario actual a CSV y cuéntalo.** Saber si son 800 o 4 500 SKU cambia el plan de carga y las estimaciones.
 
-Y después: **F0, tarea por tarea** — empezando por 0.9 y siguiendo por 0.3.
+Y después: **F0, tarea por tarea** — 0.9 (la cámara) y luego 0.6, 0.7 y 0.8.
 
-> La tarea 0.2 ya está hecha: `pnpm test` corre 68 pruebas sobre dinero, EAN-13,
-> precios y totales de venta. Corre `pnpm test` una vez y verás el punto de partida.
+> 0.2, 0.3, 0.4 y 0.5 ya están hechas: `pnpm test` corre **161 pruebas** sobre dinero,
+> EAN-13, precios, totales, ULID, UUID v7, reloj lógico, migraciones, esquema y la
+> transacción que ata cada cambio del negocio a su evento. Corre `pnpm test` una vez y
+> verás el punto de partida.

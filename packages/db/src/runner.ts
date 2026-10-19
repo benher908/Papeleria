@@ -21,6 +21,22 @@ export interface ClienteSql {
   ): Promise<{ rows: T[] }>;
 }
 
+/**
+ * Un cliente que además sabe abrir un bloque atómico.
+ *
+ * Va aparte de `ClienteSql` en vez de dentro, por dos razones: el runner de
+ * migraciones no necesita transacciones (las escribe él mismo con BEGIN/COMMIT en
+ * una sola llamada) y el contrato mínimo es más fácil de implementar en cualquier
+ * motor. `emitirEvento()` sí lo necesita, y lo pide explícitamente.
+ *
+ * La transacción se **cierra sola**: si el callback lanza, se revierte y el error
+ * original se propaga. `tx` es el mismo cliente: dentro del callback todo lo que se
+ * escriba cae en la misma transacción.
+ */
+export interface ClienteTransaccional extends ClienteSql {
+  transaction<T>(fn: (tx: ClienteSql) => Promise<T>): Promise<T>;
+}
+
 /** Una migración ya cargada en memoria, lista para aplicarse. */
 export interface Migracion {
   /** Nombre del archivo: `0001_init.sql`. Es el identificador en la tabla. */

@@ -46,60 +46,94 @@ await db.transaction(async (tx) => {
 
 ### 2.1 La regla del único camino
 
+> **Estado:** implementado en la fase 0.5, en
+> [`packages/db/src/eventos.ts`](../packages/db/src/eventos.ts). Lo que sigue es el
+> código real, no el boceto.
+
 Toda mutación pasa por **un solo** eje:
 
 ```ts
-// packages/core/src/usecases/emitirEvento.ts
-// ⭐ Si algo se puede escribir sin pasar por aquí, la sincronización tiene un agujero.
-export async function emitirEvento<E extends EventoPapeleria>(
-  tx: DbContext,
-  evento: Omit<E, 'event_id' | 'device_seq' | 'occurred_at' | 'hlc'>,
-  aplicarEstado: (tx: DbContext) => Promise<void>,   // el cambio concreto en las tablas
-  ctx: { deviceId: string; userId: string },
-) {
-  // 1. Autorización PRIMERO (doc 06). El evento no se emite sin pasar la política.
-  const decision = evaluar(construirContexto(evento, ctx), await politicasDe(tx), await permisosDe(tx, ctx.userId));
-  if (!decision.permitido) throw new ErrorNoAutorizado(decision.motivo);
+export async function emitirEvento<Tipo extends string, Payload>(
+  cliente: ClienteTransaccional,          // abre él mismo la transacción
+  entrada: EntradaEmision<Tipo, Payload>,
+): Promise<EventoEmitido<Tipo, Payload>>
+```
 
-  // 2. Reloj lógico (ver §5)
-  const hlc = await siguienteHLC(tx, ctx.deviceId);
-  const device_seq = await siguienteDeviceSeq(tx, ctx.deviceId);
+Y por dentro, en este orden:
 
-  const completo = {
-    ...evento,
-    event_id:    ulid(),                    // globalmente único y ordenable
-    device_seq,
-    occurred_at: new Date().toISOString(),
+```ts
+return cliente.transaction(async (tx) => {
+  // 1. Contadores: device_seq y HLC, en la misma fila y dentro de la transacción.
+  //    Si algo falla después, el `device_seq` se revierte con todo lo demás y no
+  //    queda un hueco que el servidor reclamaría para siempre (§3.1).
+  const { seq, hlc } = await siguienteSeqYHlc(tx, entrada.dispositivoId, ahora());
+
+  const datos = {
+    event_id: ulid(ahora()),              // globalmente único y ordenable
+    device_id: entrada.dispositivoId,
+    device_seq: seq,
+    user_id: entrada.usuarioId,
+    occurred_at: new Date(ahora()).toISOString(),
     hlc,
+    schema_version: entrada.schemaVersion ?? 1,
   };
 
-  // 3. TODO en una transacción: estado + evento + auditoría
-  await tx.query('BEGIN');
-  try {
-    await aplicarEstado(tx);
-    await tx.query(
-      `INSERT INTO outbox (id, event_id, payload, creado_at) VALUES ($1,$2,$3, now())`,
-      [uuidv7(), completo.event_id, JSON.stringify(completo)],
-    );
-    await registrarAuditoria(tx, completo, decision);
-    await tx.query('COMMIT');
-  } catch (e) {
-    await tx.query('ROLLBACK');
-    throw e;
-  }
+  // 2. El payload se construye AQUÍ dentro: necesita el `event_id` (porque
+  //    `sales.evento_id` lo copia) y el `tx` (porque el folio de la venta se
+  //    asigna en la misma transacción que la venta).
+  const payload = await entrada.payload(tx, datos);
+  const evento = { ...datos, type: entrada.tipo, payload };
 
-  // 4. Intentar subir YA (si hay red). Dispara y olvida: no bloquea la venta.
-  void intentarPush();
-  return completo;
-}
+  // 3. Autorización, ANTES de tocar el estado (doc 06).
+  const decision = await entrada.autorizar(evento);
+  if (!decision.permitido) throw new ErrorNoAutorizado(entrada.tipo, decision.motivo);
+
+  // 4. El estado. Si esto lanza, se revierte TODO: evento, contadores y auditoría.
+  await entrada.aplicarEstado(tx, evento);
+
+  // 5. La cola.
+  await tx.query('INSERT INTO outbox (id, event_id, payload) VALUES ($1,$2,$3)',
+                 [uuidV7(), evento.event_id, JSON.stringify(evento)]);
+
+  // 6. La auditoría.
+  await tx.query('INSERT INTO audit_log (...) VALUES (...)', [...]);
+});
 ```
 
 **Beneficios de tener un único eje:**
 
-- La autorización **no se puede olvidar**: está en el camino obligatorio.
+- La autorización **no se puede olvidar**: `autorizar` es un campo obligatorio y **sin
+  valor por defecto**. Mientras no exista `evaluar()` (tarea 0.6) el sistema no puede
+  emitir eventos, y eso es correcto: un «permitir todo» escondido en la biblioteca es
+  exactamente la clase de agujero que este diseño intenta no tener.
 - La auditoría **no se puede olvidar**: igual.
-- El `event_id` y el `device_seq` se asignan en un solo lugar: sin huecos ni duplicados.
+- El `event_id`, el `device_seq`, el HLC y el **folio local** se asignan en un solo lugar:
+  sin huecos ni duplicados.
 - Si mañana quieres añadir algo a cada mutación (telemetría, notificación), es un solo archivo.
+
+**Tres correcciones al boceto, encontradas al implementarlo:**
+
+1. **`aplicarEstado` tiene que recibir el evento.** El boceto la llama sin argumentos,
+   pero `sales.evento_id` es `NOT NULL` y tiene que coincidir con el `event_id` del
+   `outbox`. Sin pasárselo, esa columna es imposible de escribir.
+2. **El payload se construye dentro de la transacción.** El `folio_local` se asigna ahí:
+   si se asignara antes, un fallo quemaría un número de ticket y el hueco parecería una
+   venta borrada — la primera pregunta de cualquier auditoría. Como el payload tiene que
+   llevar ese folio, el payload va dentro también.
+3. **La autorización se evalúa dentro de la transacción**, no antes del `BEGIN` como decía
+   el boceto: así las políticas que deciden son las mismas que verá el commit.
+
+**Y dos ajustes de fondo:**
+
+- **Dónde vive.** El boceto lo ponía en `packages/core/src/usecases/`. Vive en
+  `@papeleria/db` porque es SQL contra este esquema: conoce `outbox`, `audit_log` y
+  `device_counters`. `core` es el núcleo *sin* conocimiento de tablas; lo puro que hace
+  falta —ULID y HLC— sí está allí (`core/src/ids/`, `core/src/sync/hlc.ts`).
+- **El almacenamiento que faltaba.** `siguienteDeviceSeq()` y el folio local se citaban
+  como si sus tablas existieran, y no existían. La migración
+  [`0004_eventos.sql`](../packages/db/migrations/0004_eventos.sql) crea `device_counters`
+  (el `device_seq` y el último HLC, juntos a propósito) y `folio_counters`, y añade
+  `devices.codigo`, que es de dónde sale el prefijo `C1` del folio.
 
 ## 3. El protocolo: push y pull
 
@@ -351,19 +385,43 @@ Terminal C2 (2.ª caja)   → folios  C2-000001, C2-000002...
 ```
 
 ```ts
-export async function siguienteFolioLocal(tx: DbContext, terminalCodigo: string): Promise<string> {
-  // UPDATE ... RETURNING es atómico: dos pestañas no obtienen el mismo número.
-  const { rows } = await tx.query<{ n: string }>(
-    `INSERT INTO folio_counters (terminal, siguiente) VALUES ($1, 1)
-     ON CONFLICT (terminal) DO UPDATE SET siguiente = folio_counters.siguiente + 1
-     RETURNING siguiente AS n`,
-    [terminalCodigo],
+export async function siguienteFolioLocal(cliente: ClienteSql, dispositivoId: string): Promise<string> {
+  // El INSERT ... ON CONFLICT DO UPDATE es atómico: dos transacciones simultáneas no
+  // pueden obtener el mismo número. Es lo mismo que hace `device_seq`.
+  const { rows } = await cliente.query<{ numero: unknown; codigo: string | null }>(
+    `WITH contador AS (
+       INSERT INTO folio_counters (device_id, ultimo_folio) VALUES ($1, 1)
+       ON CONFLICT (device_id) DO UPDATE
+         SET ultimo_folio = folio_counters.ultimo_folio + 1, actualizado_at = now()
+       RETURNING ultimo_folio
+     )
+     SELECT contador.ultimo_folio AS numero, devices.codigo
+       FROM contador JOIN devices ON devices.id = $1`,
+    [dispositivoId],
   );
-  return `${terminalCodigo}-${rows[0].n.padStart(6, '0')}`;
+  // …y si el dispositivo no existe o no tiene `codigo`, se lanza. Un prefijo vacío
+  // produciría folios «-000123» en silencio, que es peor que un error.
+  return `${rows[0].codigo}-${String(rows[0].numero).padStart(6, '0')}`;
 }
 ```
 
+> **Dos desvíos del boceto de arriba, al implementarlo (fase 0.5):**
+>
+> 1. **El contador se ancla al `device_id`, no al texto del prefijo.** El boceto usa
+>    `folio_counters(terminal text PRIMARY KEY)`. Anclarlo al `device_id` da una clave
+>    foránea de verdad (un dedazo al escribir el código no arranca un contador paralelo
+>    desde cero) y el contador sobrevive a que alguien corrija el prefijo. El prefijo
+>    sale de `devices.codigo`, que es único por índice parcial.
+> 2. **`sales.folio_local` sigue siendo el número visible**; el prefijo ya no se guarda
+>    aparte, se reconstruye.
+
 **¿Por qué el prefijo y no un número global?** Porque un consecutivo global requiere coordinación (o el servidor). El prefijo hace que dos dispositivos no puedan generar el mismo folio **nunca**, sin coordinación, y además te dice de qué terminal salió la venta solo con mirarlo. `folio` (el `IDENTITY`) se sigue asignando en el servidor y sirve de orden interno y para reportes consolidados.
+
+> ⚠️ **Inconsistencia pendiente de decidir.** `0003_seed_catalogos.sql` siembra un ajuste
+> `prefijo_folio = "PAP"` («PAP-000123»), que contradice el diseño de esta sección: un
+> prefijo **único** para todo el negocio no impide que dos cajas generen el mismo
+> `PAP-000001`. La implementación usa el prefijo por terminal (`devices.codigo`), porque
+> es el que da la garantía. El ajuste quedó sin uso; hay que borrarlo o darle otro papel.
 
 **Nota fiscal:** si algún día facturas (CFDI), el folio fiscal lo asigna el PAC y ese sí exige conexión. Es una razón más para tratar la facturación como un módulo aparte que **no** vive en el camino de la venta.
 

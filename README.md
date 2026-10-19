@@ -15,9 +15,10 @@ celular. También es el punto de venta.
 | Parte | Estado |
 |---|---|
 | Diseño completo (12 documentos) | ✅ terminado — [`docs/`](docs/README.md) |
-| Núcleo: dinero, códigos de barras, precios, totales | ✅ **escrito y con 68 pruebas en verde** |
+| Núcleo: dinero, códigos de barras, precios, totales | ✅ **escrito y con 103 pruebas en verde** |
 | Probador de cámara y códigos (`tools/prueba-camara`) | ✅ **listo — falta probarlo en tu celular** |
-| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 38 pruebas en verde** — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
+| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 58 pruebas en verde** — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
+| Motor de ventas: `emitirEvento()` + `outbox` | ✅ **estado, evento y auditoría en una sola transacción** — ni una venta a medias, ni un folio gastado |
 | Base local en el navegador (`apps/web`) | ✅ **funcionando** — PGlite en un Web Worker, verificado con **dos pestañas abiertas** |
 | API, interfaz de producto | ⬜ no empezado (el diseño está listo) |
 
@@ -27,15 +28,24 @@ de códigos internos, motor de precios con IVA y margen, y totales de venta con
 desglose de impuestos y sugerencia de cambio.
 
 Y en `packages/db`: el esquema completo (catálogo, ledger de inventario, ventas,
-caja, sincronización, auditoría), los roles y permisos del día 1, y las semillas de
+caja, sincronización, auditoría), los roles y permisos del día 1, las semillas de
 unidades, tasas y categorías — con un runner que se niega a aplicar una migración
-que ya corrió si alguien la editó después.
+que ya corrió si alguien la editó después — y **`emitirEvento()`**, el único camino
+por el que se puede cambiar el negocio.
+
+La propiedad que sostiene todo lo demás: **una venta escribe su estado, su evento y su
+auditoría en una sola transacción**. O entra todo, o no entra nada. Si se corta la luz a
+mitad de una venta, no queda una venta guardada que nunca llegue al servidor, ni un
+número de ticket quemado que deje la sincronización atascada. Está verificado forzando
+el fallo a propósito, y el panel lo deja ver: pulsa *Vender y fallar a mitad* y compara
+la cuenta antes y después.
 
 Y en `apps/web`: **la base local ya vive en el navegador**. Un Postgres entero
 (WASM) dentro de un Web Worker, con una sola instancia por navegador elegida entre
 pestañas, aplicando las mismas migraciones que el servidor. `pnpm web dev` y ábrela
-en dos pestañas: el panel te dice cuál es la dueña y comprueba que dos pestañas
-escribiendo a la vez no pierden ni una fila.
+en dos pestañas: el panel te dice cuál es la dueña, comprueba que dos pestañas
+escribiendo a la vez no pierden ni una fila, y te deja vender una venta de prueba y
+romperla a mitad para ver que no queda nada a medias.
 
 ---
 
@@ -168,7 +178,7 @@ herramienta) en [`docs/11 §1`](docs/11-despliegue-gratuito.md) y
 
 ### 2. Base de datos: esquema y migraciones — ✅ hecho
 
-`packages/db` ya tiene las migraciones `0001`–`0003` y 38 pruebas en verde. El
+`packages/db` ya tiene las migraciones `0001`–`0004` y 58 pruebas en verde. El
 esquema está descrito en `docs/02` y `docs/06`, y la regla que lo sostiene todo es
 una: **el mismo archivo .sql corre en PGlite (el navegador) y en PostgreSQL 16 (el
 servidor)**. No es una aspiración: hay una prueba que aplica las migraciones a los
@@ -198,8 +208,10 @@ Lo que sigue, en orden ([`docs/10`](docs/10-roadmap.md), fase F0):
 - **0.4 — PGlite en un Web Worker.** ✅ **Hecho**: la base local vive en el navegador,
   una sola instancia elegida entre pestañas, y está verificado con dos pestañas abiertas
   escribiendo a la vez. El detalle está en [`apps/web/README.md`](apps/web/README.md).
-- **0.5 — `emitirEvento()` + `outbox`.** Que una venta escriba su estado y su
-  evento en una sola transacción.
+- **0.5 — `emitirEvento()` + `outbox`.** ✅ **Hecho**: una venta escribe su estado, su
+  evento y su auditoría en una sola transacción. Forzando un fallo después de escribir el
+  estado, la base queda idéntica, contadores incluidos. Verificado en PGlite, contra un
+  PostgreSQL 16.14 real y a mano en el navegador (sección 4 del panel).
 - **0.6 — `evaluar()` (RBAC + ABAC)** con la tabla de tests de políticas de
   `docs/06 §9`.
 

@@ -59,6 +59,11 @@ Abre `http://localhost:5173` **en dos pestañas**. Verás:
   contador. Por eso, en cualquier instante, tiene que cumplirse `contador == marcas`.
 - Veredicto esperado: **«Sin pérdidas»** con 2 o más pestañas distintas y filas de la
   otra pestaña dentro de la propia ventana de escritura.
+- La sección **4 · Estado y evento, en una sola transacción** escribe una venta de verdad
+  (venta, líneas, movimiento de stock, evento en la cola y auditoría). Tiene tres botones:
+  *Vender*, *Vender y fallar a mitad* y *Borrar datos de prueba*. El segundo escribe el
+  estado completo y **revienta a propósito justo después**; la foto antes/después tiene que
+  salir idéntica, contadores incluidos. Ver [abajo](#lo-que-demuestra-la-sección-4).
 
 El `UPDATE` va sobre **la misma fila** en todas las transacciones: es el peor caso
 posible para perder una actualización. Si la prueba pasa, no es por falta de
@@ -77,6 +82,39 @@ prueba y también mientras la otra pestaña sigue escribiendo: las dos escritura
 confirman juntas o no se confirman. Por eso **no hace falta** que las pestañas arranquen
 a la vez, ni esperar a que terminen, ni sincronizar relojes. Una prueba que dependiera de
 que dos pestañas arrancan en el mismo milisegundo sería una prueba que falla sola.
+
+### Lo que demuestra la sección 4
+
+La sección 3 comprueba que **dos pestañas** no se pisan. La 4 comprueba algo distinto y
+más importante para el negocio: que **una venta no se puede guardar a medias**.
+
+Una venta toca cinco sitios: `sales`, `sale_lines`, `stock_movements`, `outbox` y
+`audit_log`, además de los contadores (`device_seq` y el folio de la terminal). Todo eso
+pasa por `emitirEvento()`, que abre **una sola transacción**. El botón *Vender y fallar a
+mitad* explota deliberadamente **después** de escribir el estado, que es el peor momento
+posible: es donde un `try/catch` mal puesto dejaría la venta guardada, el evento sin
+encolar y esa venta sin llegar nunca al servidor.
+
+Cada pulsación imprime la cuenta antes y después; con el fallo provocado sale:
+
+```text
+ventas                1 → 1
+líneas de venta       1 → 1
+movimientos de stock  1 → 1
+eventos en la cola    1 → 1
+entradas de auditoría 1 → 1
+device_seq            1 → 1
+último folio local    C1-000001 → C1-000001
+```
+
+Ni un folio gastado, ni un hueco en `device_seq`. **El hueco en `device_seq` es el que
+importa de verdad**: el servidor reclama a partir del último `device_seq` que vio, así que
+un número quemado sin evento sería un evento que el servidor esperaría para siempre y la
+sincronización se quedaría atascada en ese punto.
+
+> El botón *Borrar datos de prueba* deja la base como recién migrada, así que la prueba se
+> puede pulsar cien veces y el folio vuelve a empezar en `C1-000001`. Sólo borra las filas
+> de cuatro ids literales del andamio; no puede alcanzar un dato real.
 
 ---
 
@@ -118,8 +156,10 @@ en cada pulsación de tecla.
 |---|---|
 | `src/db/pglite.worker.ts` | El obrero que **es dueño** de la base. Sólo lo ejecuta la pestaña líder; ahí corren las migraciones, una sola vez por origen. |
 | `src/db/baseLocal.ts` | El cliente tipado. Nadie más toca PGlite: la app usa `consultar`, `ejecutar`, `enTransaccion`, `sincronizar`. |
+| `src/db/cliente.ts` | Traduce ese cliente al contrato `query`/`exec`/`transaction` que espera `@papeleria/db`. |
 | `src/db/migraciones.ts` | Los `.sql` de `packages/db` incrustados en el bundle por Vite. |
-| `src/diagnostico/` | El panel: capas, migraciones, semillas y la prueba de dos pestañas. |
+| `src/diagnostico/` | El panel: capas, migraciones, semillas, la prueba de dos pestañas y la de la transacción. |
+| `src/diagnostico/outbox.ts` | La venta de prueba de la sección 4: la emite, la revienta y borra lo que dejó. |
 | `src/estilos.css` | Estilos propios. Tailwind y shadcn/ui llegan con la interfaz de producto, no antes. |
 
 ### Las migraciones: un solo origen para dos caminos

@@ -12,11 +12,12 @@
  * Uso:  node tools/prueba-camara/preparar-certificado.mjs
  */
 
-import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { ejecutarMkcert, rutaDeMkcert, estaEnElPath } from './mkcert.mjs';
 
 const AQUI = fileURLToPath(new URL('.', import.meta.url));
 const DIR_CERTS = join(AQUI, 'certs');
@@ -41,14 +42,6 @@ function ipDeLan() {
   return candidatas[0] ?? null;
 }
 
-function ejecutarMkcert(argumentos, opciones = {}) {
-  return execFileSync('mkcert', argumentos, {
-    encoding: 'utf8',
-    shell: true,
-    stdio: opciones.silencioso ? 'pipe' : 'inherit',
-  });
-}
-
 // ─────────────────────────── comprobaciones ───────────────────────────
 
 const interfaz = ipDeLan();
@@ -66,10 +59,9 @@ if (!ipValida) {
   process.exit(1);
 }
 
-let versionMkcert;
-try {
-  versionMkcert = ejecutarMkcert(['-version'], { silencioso: true }).trim();
-} catch {
+const rutaMkcert = rutaDeMkcert();
+
+if (!rutaMkcert) {
   console.error(`
   ${rojo('✗')} No se encontró ${negrita('mkcert')} en esta computadora.
 
@@ -80,9 +72,15 @@ try {
       choco install mkcert
       scoop install mkcert
 
-  Después de instalarlo, cierra y vuelve a abrir la terminal, y corre otra vez:
+  Después de instalarlo, corre otra vez:
 
       ${negrita('pnpm certificado')}
+
+  Si acabas de instalarlo y sigue sin aparecer, casi siempre es que el PATH de tu
+  terminal es más viejo que la instalación (las terminales abiertas no se enteran
+  de las variables de entorno nuevas). Este script busca en las carpetas donde lo
+  dejan los instaladores, así que reiniciar la terminal normalmente no hace falta.
+  Si tampoco así aparece, cierra esta terminal, abre una nueva y reintenta.
 
   Alternativa: descarga el .exe de https://github.com/FiloSottile/mkcert/releases
   y ponlo en una carpeta que esté en el PATH.
@@ -90,11 +88,25 @@ try {
   process.exit(1);
 }
 
+let versionMkcert = '(no se pudo leer la versión)';
+try {
+  versionMkcert = ejecutarMkcert(['-version'], { silencioso: true }).trim();
+} catch {
+  /* el ejecutable existe pero no respondió: se sigue, ya se verá si falla */
+}
+
+const enElPath = estaEnElPath();
+
 console.log('');
 console.log(`  ${negrita('CERTIFICADO LOCAL PARA LA PRUEBA DE LA CÁMARA')}`);
 console.log(`  ${tenue('─'.repeat(52))}`);
 console.log(`  ${tenue('mkcert')}           ${versionMkcert}`);
 console.log(`  ${tenue('Red')}              ${interfaz.nombre} · ${verde(ip)}`);
+console.log(`  ${tenue('Ejecutable')}       ${rutaMkcert}`);
+if (!enElPath) {
+  console.log(`                   ${tenue('(no está en el PATH de esta terminal, pero lo encontré igual:')}`);
+  console.log(`                   ${tenue('tu terminal tiene el PATH viejo; una nueva también lo verá)')}`);
+}
 console.log('');
 
 // ─────────────────────────── ejecución ───────────────────────────
@@ -114,9 +126,11 @@ const rutaLlave = join(DIR_CERTS, 'local-key.pem');
 
 console.log(`\n  ${negrita('2/2')} Generando el certificado para ${verde(ip)}…`);
 try {
+  // Sin comillas: `ejecutarMkcert` pasa los argumentos literalmente, y las rutas
+  // de OneDrive llevan espacios. Comillarlas aquí las volvería parte de la ruta.
   ejecutarMkcert([
-    '-cert-file', `"${rutaCert}"`,
-    '-key-file', `"${rutaLlave}"`,
+    '-cert-file', rutaCert,
+    '-key-file', rutaLlave,
     '127.0.0.1',
     '::1',
     ip,

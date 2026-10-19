@@ -27,8 +27,9 @@ import { X509Certificate } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import { extname, join } from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+
+import { ejecutarMkcert } from './mkcert.mjs';
 
 const AQUI = fileURLToPath(new URL('.', import.meta.url));
 const PUBLICO = join(AQUI, 'public');
@@ -101,10 +102,11 @@ function inspeccionarCertificado(rutaCert, ip) {
 /** La CA raíz de mkcert, para que el celular pueda descargarla por http. */
 function rutaRaizDeMkcert() {
   try {
-    const salida = execFileSync('mkcert', ['-CAROOT'], { encoding: 'utf8', shell: true, stdio: ['ignore', 'pipe', 'ignore'] });
-    const ruta = join(salida.trim(), 'rootCA.pem');
+    const ruta = join(ejecutarMkcert(['-CAROOT'], { silencioso: true }).trim(), 'rootCA.pem');
     return existsSync(ruta) ? ruta : null;
   } catch {
+    // O no hay mkcert, o no está instalada la CA todavía. Da igual: la página de
+    // instalación ya explica ese caso, y el servidor arranca sin esa comodidad.
     return null;
   }
 }

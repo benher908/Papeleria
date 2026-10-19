@@ -41,6 +41,11 @@ pnpm camara          # levanta los servidores y te dice qué abrir en el celular
 `pnpm certificado` pide mkcert. Si no lo tienes, el propio script te dice cómo
 instalarlo (`winget install FiloSottile.mkcert`).
 
+Y si acabas de instalarlo y tu terminal todavía tiene el PATH viejo —lo normal,
+porque las terminales abiertas no se enteran de las variables de entorno nuevas—
+el script lo busca igual en las carpetas donde lo dejan winget, choco y scoop. No
+deberías tener que reiniciar la terminal para esto.
+
 `pnpm camara` imprime una tabla así:
 
 ```text
@@ -134,6 +139,12 @@ código los traduce en una sola tabla. Cambiar uno sin el otro es un fallo silen
 
 - **Cero dependencias de npm.** El servidor usa solo `node:https`, `node:http`,
   `node:crypto` y `node:os`. Nada que instalar ni que se rompa.
+- **Encuentra mkcert aunque el PATH esté viejo** (`mkcert.mjs`). `winget`, choco y
+  scoop actualizan el PATH, pero **las terminales ya abiertas no se enteran**. El
+  síntoma es desconcertante: instalas mkcert, el instalador dice que todo bien, y
+  el comando sigue diciendo que no lo encuentra. Aquí se busca también en las rutas
+  donde de verdad lo dejan los instaladores, así que no hace falta reiniciar nada.
+  Se busca en un solo sitio para que los dos scripts compartan la respuesta.
 - **Dos servidores, a propósito.** El `http` en 8080 es el que separa «red» de
   «certificado» (ver arriba). También sirve la CA, así que el celular la descarga
   sin cables ni correo.

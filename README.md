@@ -16,8 +16,8 @@ celular. También es el punto de venta.
 |---|---|
 | Diseño completo (12 documentos) | ✅ terminado — [`docs/`](docs/README.md) |
 | Núcleo: dinero, códigos de barras, precios, totales | ✅ **escrito y con 68 pruebas en verde** |
+| Probador de cámara y códigos (`tools/prueba-camara`) | ✅ **listo — falta probarlo en tu celular** |
 | Base de datos, API, interfaz web | ⬜ no empezado (el diseño está listo) |
-| Validar la cámara del celular sobre HTTPS | ⬜ **el riesgo #1, hazlo primero** |
 
 Lo que ya funciona hoy, en `packages/core`: aritmética de dinero en centavos
 (`bigint`, sin errores de punto flotante), dígito verificador EAN-13, generación
@@ -50,6 +50,9 @@ pnpm typecheck            # verificar tipos en todo el repositorio
 pnpm core test            # solo el núcleo
 pnpm core test:watch      # modo reloj: re-corre al guardar (úsalo mientras programas)
 pnpm core typecheck       # tipos solo del núcleo
+
+pnpm certificado          # ⚠️ PRIMERO: crea el certificado para probar la cámara del celular
+pnpm camara               # levanta el probador y te dice qué abrir en el celular
 ```
 
 Ejecuta `pnpm test` y `pnpm typecheck` **antes de cada commit**. Si están en
@@ -83,6 +86,12 @@ Papeleria/
 │       ├── src/precios/calcularPrecio.ts
 │       └── src/ventas/totales.ts
 │
+├── tools/
+│   └── prueba-camara/           probador de la tarea 0.9 (se puede borrar cuando ya no haga falta)
+│       ├── preparar-certificado.mjs   `pnpm certificado`
+│       ├── servidor.mjs               `pnpm camara`
+│       └── public/                    la página de diagnóstico
+│
 ├── apps/                        (vacío por ahora: web y api)
 ├── package.json
 ├── pnpm-workspace.yaml
@@ -104,18 +113,27 @@ El orden importa: primero lo que puede invalidar el proyecto, luego lo demás.
 
 Es **el único riesgo que puede tirar el requisito principal**. `getUserMedia`
 exige HTTPS; instalar la app como PWA **no** lo evita (es el mito más común).
-Antes de escribir la interfaz, confirma que el navegador del celular lee un
-código de barras sobre tu red local con certificado válido. Receta en
-[`docs/11 §1`](docs/11-despliegue-gratuito.md) (mkcert) y
-[`docs/04`](docs/04-escaneo-movil.md).
+Hay un probador ya hecho para esto:
 
 ```powershell
-# resumen de lo que vas a probar
-#  1. mkcert -install  y generar el certificado para la IP de tu PC
-#  2. servir una página de prueba con HTTPS (Caddy o vite --https)
-#  3. abrirla desde el celular e instalar el certificado raíz
-#  4. leer un código de barras con la cámara
+pnpm certificado    # una vez: crea la autoridad certificadora y el certificado
+                    # con la IP actual de tu red. Pide permiso de administrador.
+pnpm camara         # levanta el probador y te dice la dirección exacta
+                    # que debes abrir en el celular
 ```
+
+Después, **en el celular**, en este orden: abre la dirección `http://…:8080` que
+imprime el comando (si esto no abre, el problema es la red o el firewall, **no** el
+certificado), descarga e instala el certificado, y pasa a `https://…:8443`. Ahí
+verás el diagnóstico completo y podrás leer códigos de verdad con la cámara.
+
+El probador **separa las cuatro capas** que se confunden en una sola queja
+(«no lee»): red → certificado → permiso → decodificador. Cuando algo falla, te dice
+cuál. Detalle en [`tools/prueba-camara/README.md`](tools/prueba-camara/README.md).
+
+Si eso funciona, el riesgo desaparece y se puede construir. Receta manual (sin la
+herramienta) en [`docs/11 §1`](docs/11-despliegue-gratuito.md) y
+[`docs/04`](docs/04-escaneo-movil.md).
 
 ### 2. Base de datos: esquema y migraciones
 

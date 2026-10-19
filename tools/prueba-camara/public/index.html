@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Prueba de cámara y códigos de barras — Papelería</title>
+<style>
+  :root {
+    --tinta: #10161f;
+    --papel: #f2f4f7;
+    --panel: #ffffff;
+    --borde: #d3d9e2;
+    --tenue: #5b6675;
+    --ok: #0f7b3f;
+    --ok-fondo: #e6f4ea;
+    --mal: #b3261e;
+    --mal-fondo: #fce8e6;
+    --ojo: #8a5a00;
+    --ojo-fondo: #fdf2d9;
+    --acento: #1c5fd4;
+    --acento-suave: #e8effc;
+    --radio: 10px;
+    --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    padding: 16px 12px 64px;
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--tinta);
+    background: var(--papel);
+  }
+  .ancho { max-width: 1080px; margin: 0 auto; }
+
+  header.encabezado { margin-bottom: 20px; }
+  header.encabezado h1 { margin: 0 0 4px; font-size: 1.45rem; line-height: 1.25; }
+  header.encabezado p { margin: 0; color: var(--tenue); font-size: .9rem; }
+
+  .insignias { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .insignia {
+    font: .78rem/1 var(--mono);
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: var(--panel);
+    border: 1px solid var(--borde);
+    color: var(--tenue);
+  }
+  .insignia.buena { background: var(--ok-fondo); border-color: #b7dfc5; color: var(--ok); }
+  .insignia.mala  { background: var(--mal-fondo); border-color: #f0b8b4; color: var(--mal); }
+  .insignia.ojo   { background: var(--ojo-fondo); border-color: #ecd39a; color: var(--ojo); }
+
+  .columnas { display: grid; gap: 16px; }
+  @media (min-width: 900px) { .columnas { grid-template-columns: 1fr 1fr; align-items: start; } }
+
+  section.tarjeta {
+    background: var(--panel);
+    border: 1px solid var(--borde);
+    border-radius: var(--radio);
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  section.tarjeta > h2 {
+    margin: 0 0 4px;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  section.tarjeta > h2 .num {
+    display: inline-grid;
+    place-items: center;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--acento-suave);
+    color: var(--acento);
+    font: 700 .78rem/1 system-ui, sans-serif;
+    flex: 0 0 auto;
+  }
+  section.tarjeta > p.ayuda { margin: 0 0 12px; color: var(--tenue); font-size: .87rem; }
+
+  /* ── aviso destacado ───────────────────────────────── */
+  .aviso { border-radius: var(--radio); padding: 12px 14px; margin-bottom: 16px; border: 1px solid; }
+  .aviso.malo { background: var(--mal-fondo); border-color: #f0b8b4; color: #7a1a15; }
+  .aviso.ojo  { background: var(--ojo-fondo); border-color: #ecd39a; color: #6b4600; }
+  .aviso.bueno{ background: var(--ok-fondo);  border-color: #b7dfc5; color: #0b5c2f; }
+  .aviso strong { display: block; margin-bottom: 2px; }
+  .oculto { display: none !important; }
+
+  /* ── diagnóstico ───────────────────────────────────── */
+  table.diag { width: 100%; border-collapse: collapse; font-size: .87rem; }
+  table.diag th, table.diag td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+  table.diag th { width: 44%; font-weight: 600; color: var(--tenue); }
+  table.diag td { font-family: var(--mono); font-size: .82rem; word-break: break-word; }
+  table.diag tr:last-child th, table.diag tr:last-child td { border-bottom: 0; }
+  .punto { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: baseline; }
+  .punto.ok { background: var(--ok); } .punto.mal { background: var(--mal); } .punto.ojo { background: #d69e00; }
+
+  /* ── botones ───────────────────────────────────────── */
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: 12px 16px;
+    min-height: 46px;
+    border-radius: var(--radio);
+    border: 1px solid var(--borde);
+    background: var(--panel);
+    color: var(--tinta);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:hover { border-color: #b4bdcb; }
+  button.principal { background: var(--acento); border-color: var(--acento); color: #fff; }
+  button.principal:hover { background: #1750b5; }
+  button.peligro { background: var(--mal); border-color: var(--mal); color: #fff; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .fila-botones { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  /* ── cámara ────────────────────────────────────────── */
+  .marco-video {
+    position: relative;
+    margin: 12px 0;
+    border-radius: var(--radio);
+    overflow: hidden;
+    background: #0d1117;
+    aspect-ratio: 4 / 3;
+    border: 1px solid var(--borde);
+  }
+  .marco-video video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* Guía visual: la banda donde conviene poner el código de barras */
+  .guia { position: absolute; left: 6%; right: 6%; top: 34%; height: 32%; border: 2px dashed rgba(255,255,255,.75); border-radius: 6px; pointer-events: none; }
+  .marca-agua { position: absolute; inset: 0; display: grid; place-items: center; color: #8b95a3; font-size: .85rem; text-align: center; padding: 20px; }
+
+  #ultimaLectura {
+    border-radius: var(--radio);
+    border: 1px solid var(--borde);
+    padding: 12px;
+    margin-bottom: 10px;
+    background: var(--papel);
+    min-height: 72px;
+  }
+  #ultimaLectura.vacia { color: var(--tenue); font-size: .88rem; display: grid; place-items: center; }
+  #ultimaLectura .codigo { font: 700 1.35rem/1.2 var(--mono); word-break: break-all; }
+  #ultimaLectura .meta { color: var(--tenue); font-size: .8rem; margin-top: 6px; }
+  #ultimaLectura.flash { animation: destello .5s ease-out; }
+  @keyframes destello { from { background: var(--ok-fondo); border-color: var(--ok); } to { background: var(--papel); } }
+
+  ol.lecturas { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; font-size: .85rem; }
+  ol.lecturas li { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--borde); align-items: baseline; }
+  ol.lecturas li .c { font-family: var(--mono); font-weight: 600; word-break: break-all; }
+  ol.lecturas li .f { color: var(--tenue); font-size: .78rem; margin-left: auto; white-space: nowrap; }
+
+  .opciones { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0 0; font-size: .87rem; }
+  .opciones label { display: flex; align-items: center; gap: 6px; }
+  fieldset { border: 1px solid var(--borde); border-radius: var(--radio); padding: 10px 12px; margin: 12px 0 0; }
+  legend { font-size: .8rem; color: var(--tenue); padding: 0 6px; }
+  .rejilla-formatos { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+  .rejilla-formatos label { display: flex; gap: 8px; align-items: flex-start; font-size: .84rem; }
+  .rejilla-formatos small { display: block; color: var(--tenue); font-size: .75rem; }
+  select, input[type="text"] {
+    font: inherit; padding: 10px 12px; border-radius: var(--radio);
+    border: 1px solid var(--borde); background: #fff; min-height: 44px; max-width: 100%;
+  }
+
+  /* ── QR y códigos de prueba ────────────────────────── */
+  #qr { display: block; width: 100%; max-width: 260px; height: auto; image-rendering: pixelated; border: 1px solid var(--borde); border-radius: 8px; background: #fff; }
+  code.enlace { display: block; font-family: var(--mono); font-size: .95rem; background: var(--acento-suave); border: 1px solid #c3d5f7; border-radius: 8px; padding: 10px 12px; margin: 10px 0; word-break: break-all; white-space: pre-line; }
+
+  .hoja-codigos { display: grid; gap: 14px; }
+  .codigo-prueba {
+    border: 1px solid var(--borde); border-radius: var(--radio);
+    padding: 10px; background: #fff;
+    display: grid; gap: 6px;
+  }
+  .codigo-prueba .titulo { font-weight: 600; font-size: .88rem; }
+  .codigo-prueba .nota { color: var(--tenue); font-size: .78rem; }
+  /* Tamaño natural: estirar un código de barras lo vuelve borroso y deja de leerse. */
+  .codigo-prueba canvas { width: auto; max-width: 100%; height: auto; background: #fff; image-rendering: pixelated; }
+  .codigo-prueba .veredicto { font: .8rem/1.4 var(--mono); border-radius: 6px; padding: 6px 8px; }
+  .codigo-prueba .veredicto.ok { background: var(--ok-fondo); color: var(--ok); }
+  .codigo-prueba .veredicto.mal { background: var(--mal-fondo); color: var(--mal); }
+  .codigo-prueba .veredicto.pendiente { background: var(--papel); color: var(--tenue); }
+
+  ul.referencia { margin: 0; padding-left: 20px; font-size: .87rem; color: var(--tenue); }
+  ul.referencia li { margin-bottom: 6px; }
+  ul.referencia code { font-family: var(--mono); font-size: .82rem; background: var(--papel); padding: 1px 5px; border-radius: 4px; }
+  .pie { text-align: center; color: var(--tenue); font-size: .8rem; margin-top: 8px; }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .no-imprimir { display: none !important; }
+    section.tarjeta { break-inside: avoid; border: 0; padding: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="ancho">
+
+  <header class="encabezado">
+    <h1>Prueba de cámara y códigos de barras</h1>
+    <p>
+      Tarea <strong>0.9</strong> del roadmap: validar el único riesgo que puede tirar el proyecto
+      antes de escribir la aplicación. Si esta página funciona en el celular, todo lo demás va.
+    </p>
+    <div class="insignias" id="insignias"></div>
+  </header>
+
+  <div id="avisos"></div>
+
+  <div class="columnas">
+    <div>
+      <section class="tarjeta">
+        <h2><span class="num">1</span> Diagnóstico</h2>
+        <p class="ayuda">Lo que el navegador reporta. Si algo falla, aquí se ve <em>qué</em> falla.</p>
+        <table class="diag"><tbody id="diag"></tbody></table>
+      </section>
+
+      <section class="tarjeta no-imprimir" id="tarjeta-qr">
+        <h2><span class="num">2</span> Abrir la prueba en el celular</h2>
+        <p class="ayuda">Apunta la cámara del celular a este cuadro, o escribe la dirección.</p>
+        <canvas id="qr" width="260" height="260"></canvas>
+        <code class="enlace" id="enlace-celular">—</code>
+        <div class="fila-botones">
+          <button type="button" id="btn-copiar">Copiar dirección</button>
+        </div>
+      </section>
+    </div>
+
+    <div>
+      <section class="tarjeta" id="tarjeta-camara">
+        <h2><span class="num">3</span> Cámara y lectura</h2>
+        <p class="ayuda">
+          En el celular. Pulsa <strong>Encender cámara</strong>, acepta el permiso y apunta al código.
+          El rectángulo punteado marca dónde conviene ponerlo.
+        </p>
+        <div class="fila-botones">
+          <button type="button" class="principal" id="btn-encender">Encender cámara</button>
+          <button type="button" class="peligro oculto" id="btn-apagar">Apagar</button>
+        </div>
+
+        <div class="marco-video">
+          <video id="video" playsinline muted autoplay></video>
+          <div class="guia oculto" id="guia"></div>
+          <div class="marca-agua" id="marca-agua">La cámara está apagada</div>
+        </div>
+
+        <div id="ultimaLectura" class="vacia">Sin lecturas todavía</div>
+        <ol class="lecturas" id="lecturas"></ol>
+
+        <fieldset class="no-imprimir">
+          <legend>Formatos que se buscan</legend>
+          <div class="rejilla-formatos" id="formatos"></div>
+        </fieldset>
+
+        <div class="opciones no-imprimir">
+          <label>Lector:
+            <select id="sel-lector">
+              <option value="auto">Automático (el mejor disponible)</option>
+              <option value="nativo">Nativo del navegador (BarcodeDetector)</option>
+              <option value="zxing">ZXing (WebAssembly)</option>
+            </select>
+          </label>
+          <label><input type="checkbox" id="chk-tryharder" checked> Modo insistente (lee más, más lento)</label>
+          <label><input type="checkbox" id="chk-banda" checked> Reintentar en la banda central</label>
+          <label><input type="checkbox" id="chk-sonido" checked> Pitido y vibración</label>
+        </div>
+      </section>
+
+      <section class="tarjeta">
+        <h2><span class="num">4</span> Códigos de prueba</h2>
+        <p class="ayuda">
+          Se dibujan <em>y se leen</em> automáticamente: si el veredicto dice «leído», el decodificador
+          del celular sirve, aunque la cámara todavía no. Apunta la cámara a esta pantalla para
+          probar el par completo.
+        </p>
+        <div class="fila-botones no-imprimir" style="margin-bottom:12px">
+          <button type="button" id="btn-regenerar">Volver a generar y leer</button>
+          <button type="button" id="btn-imprimir">Imprimir esta hoja</button>
+        </div>
+        <div class="hoja-codigos" id="hoja-codigos"></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="tarjeta no-imprimir">
+    <h2>Si algo falla, esto es lo que significa</h2>
+    <ul class="referencia">
+      <li><strong>Sale «No es un contexto seguro».</strong> El certificado no está bien instalado en el celular, o abriste <code>http://</code> en lugar de <code>https://</code>. La cámara <em>solo</em> funciona con https y certificado válido. Instalar la app como PWA <strong>no</strong> lo evita.</li>
+      <li><strong>El celular no abre ni la dirección <code>http://…:8080</code>.</strong> No es un problema de certificado: es la red o el firewall de Windows. Revisa que estén en la misma wifi (no una red de invitados) y permite Node en el firewall.</li>
+      <li><strong>Abres https y sale advertencia de seguridad.</strong> El certificado no incluye <em>exactamente</em> esa dirección IP. Vuelve a generarlo con la IP actual; la IP cambia al reiniciar el módem.</li>
+      <li><strong>El permiso se queda cargando o da error.</strong> Cierra otras apps que usen la cámara. En iPhone, revisa Ajustes → Safari → Cámara.</li>
+      <li><strong>La cámara se ve pero no lee nada.</strong> Acerca más, busca luz (sin reflejos), apoya el celular para que no tiemble y no pongas el código en el borde de la pantalla. Con el modo insistente activado mejora.</li>
+      <li><strong>Pulsaste «Encender» desde la PC y no hay cámara.</strong> Es normal: la PC sirve para el QR y los códigos de prueba; la cámara se prueba en el celular.</li>
+    </ul>
+  </section>
+
+  <p class="pie">Herramienta de desarrollo · no forma parte de la aplicación que usarás en el mostrador</p>
+</div>
+
+<!--ENTORNO-->
+
+<!-- Generación de códigos (bwip-js) — CDN verificado: /dist/bwip-js.min.js expone `bwipjs.toCanvas` -->
+<script src="https://cdn.jsdelivr.net/npm/bwip-js@4/dist/bwip-js.min.js"></script>
+<!-- Lectura de respaldo (ZXing-WASM 3.x) — expone `ZXingWASM.readBarcodes` y baja el .wasm de jsDelivr -->
+<script src="https://cdn.jsdelivr.net/npm/zxing-wasm@3/dist/iife/reader/index.js"></script>
+<script type="module" src="./app.mjs"></script>
+</body>
+</html>

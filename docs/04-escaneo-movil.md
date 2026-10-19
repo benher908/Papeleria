@@ -52,6 +52,12 @@ Esto significa que la solución "pongo mi servidor local en el PC, abro `http://
 
 > **Mito frecuente:** "si instalo la PWA como app, ya puedo usar la cámara sin HTTPS". **Falso.** Los service workers y `getUserMedia` requieren contexto seguro en todos los casos. No hay atajo.
 
+> **Antes de creerme, compruébalo en tu celular.** El probador de
+> [`tools/prueba-camara`](../tools/prueba-camara/README.md) valida las cuatro capas
+> (red → certificado → permiso → decodificador) en cinco minutos, y te dice cuál
+> falló cuando falla. Es la tarea 0.9 del roadmap y la única que puede invalidar
+> todo lo demás: hazla antes de escribir la aplicación.
+
 ### Solución pragmática recomendada: las dos vías
 
 ```text

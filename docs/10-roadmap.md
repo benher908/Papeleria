@@ -70,23 +70,41 @@ gantt
 | 0.6 | `evaluar()` (RBAC+ABAC) con un rol | Tabla de tests de políticas en verde | ⬜ |
 | 0.7 | Login mínimo (contraseña argon2id + cookie httpOnly) | Entras, la sesión persiste, `logout` funciona | ⬜ |
 | 0.8 | `useBarcodeWedge` (HID) | Un lector de $25 o un script que simule pulsaciones imprime el código en consola | ⬜ |
-| 0.9 | **Prueba de riesgo: cámara en el celular** | Un `<video>` que lea un EAN-13 con `BarcodeDetector` **en HTTPS** | ⬜ **empieza aquí** |
+| 0.9 | **Prueba de riesgo: cámara en el celular** | Un `<video>` que lea un EAN-13 con `BarcodeDetector` **en HTTPS** | 🟡 **herramienta lista** — falta probarla en tu celular |
 
 > **Orden sugerido a partir de hoy:** 0.9 (riesgo) → 0.3 → 0.4 → 0.6 → los demás.
 > La 0.2 ya está hecha y era la única que se podía adelantar sin decidir nada más.
 
 ### La tarea 0.9 es la más importante de esta fase
 
-Antes de escribir nada más, valida el riesgo del proyecto:
+Antes de escribir nada más, valida el riesgo del proyecto. **Ya está hecho el
+probador**: `tools/prueba-camara/` (ver su README). Son dos comandos:
 
-```text
-1. Levanta un HTTPS local con mkcert (certificado con la IP de la LAN en el SAN).
-2. Instala la CA en tu celular (Android o iOS, con el segundo paso en iOS).
-3. Abre una página que muestre la cámara y lea un código de barras.
-4. Apunta a un producto del supermercado.
+```powershell
+pnpm certificado     # crea la CA y el certificado con la IP actual de la LAN
+pnpm camara          # levanta el probador y dice qué abrir en el celular
 ```
 
-**Si esto funciona**, el proyecto va. **Si no funciona**, sigue estos pasos y no avances hasta resolverlo: es el único riesgo técnico que podría invalidar el requisito principal que pediste. Media hora de trabajo que te ahorra semanas.
+Y la secuencia en el celular:
+
+```text
+1. Abre la dirección http://IP:8080 que imprime el comando.
+   Si esto NO abre: es la red o el firewall de Windows, no el certificado.
+2. Descarga e instala el certificado.
+   En iOS hay un SEGUNDO paso: activarlo en Ajustes de confianza de certificados.
+3. Pasa a https://IP:8443 y revisa la sección 1 (Diagnóstico).
+4. Pulsa Encender cámara y apunta a los códigos de la sección 4,
+   o a un producto del supermercado.
+```
+
+El probador está diseñado para **decir cuál de las cuatro capas falló**:
+red → certificado → permiso → decodificador. Además dibuja los códigos de prueba
+y **los lee solo**, así que distingue «el decodificador no sirve» de «la cámara no
+enfoca» sin necesidad de un segundo dispositivo.
+
+**Si esto funciona**, el proyecto va. **Si no funciona**, no avances hasta
+resolverlo: es el único riesgo técnico que podría invalidar el requisito principal
+que pediste. Media hora de trabajo que te ahorra semanas.
 
 ### Lo que NO se hace en F0
 

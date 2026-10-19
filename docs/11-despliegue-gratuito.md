@@ -52,6 +52,12 @@ pnpm dev
 
 La forma de tener HTTPS **sin internet** y sin pagar nada.
 
+> **Atajo ya hecho:** el probador de `tools/prueba-camara` hace todo lo de esta
+> receta con dos comandos (`pnpm certificado` y `pnpm camara`), mete la IP en el
+> certificado automáticamente, sirve la CA al celular para que la descargue sin
+> cables ni correo, y avisa si el certificado dejó de cubrir la IP. Los pasos
+> manuales de abajo quedan como referencia de lo que ocurre por dentro.
+
 ```powershell
 # 1. Instala mkcert (una vez)
 winget install FiloSottile.mkcert

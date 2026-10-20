@@ -11,6 +11,7 @@ migrations/
   0003_seed_catalogos.sql   unidades, tasas de impuesto, categorías, configuración
   0004_eventos.sql          device_counters, folio_counters y devices.codigo
   0005_politicas.sql        las 30 reglas de autorización, como datos
+  0006_secuencias.sql       barcode_sequences: el código interno, reservado en la base
 src/
   runner.ts                 aplica las migraciones y detecta divergencias
   archivos.ts               lee los .sql desde disco (sólo Node)
@@ -20,6 +21,7 @@ src/
   eventos.ts                emitirEvento(): estado + evento + auditoría en una transacción
   autorizacion.ts           carga permisos, políticas y step-up, y llama a evaluar()
   auth.ts                   argon2id, dispositivos y sesiones: crear cuenta, entrar, verificar, salir
+  secuencias.ts             el código interno EAN-13: reservado en la base, nunca en el navegador
 ```
 
 ## Uso
@@ -169,6 +171,40 @@ Lo que **no** trae, a propósito: rotación de refresh tokens, PIN y step-up (F6
 rápido) y limitador de intentos persistente (hoy, el `retrasoTrasFallos()` puro más una
 espera creciente en la pantalla). Está dicho en `docs/07 §2.4` y en `docs/10`.
 
+## `secuencias.ts`: el código interno
+
+Un producto sin código de fábrica necesita uno propio, y ese número no se puede elegir en
+el navegador: dos pestañas eligiendo a la vez acaban con el mismo código y el `UNIQUE` de
+`product_barcodes.codigo` rechaza la segunda. La secuencia vive en la base
+(`barcode_sequences`, migración `0006`) y se reserva con un `UPDATE ... RETURNING`
+atómico: la fila se bloquea, se entrega el número y se avanza el contador en una sola
+sentencia.
+
+```ts
+import { generarCodigoInterno } from '@papeleria/db';
+
+await base.enTransaccion(async (tx) => {
+  const codigo = await generarCodigoInterno(tx);   // '2000000000015'
+  await tx.query(`INSERT INTO product_barcodes (product_id, codigo) VALUES ($1, $2)`, [id, codigo]);
+});
+```
+
+Tres cosas que importan:
+
+- **Va dentro de la transacción del producto.** Si el producto no entra, la transacción se
+  revierte y el número vuelve a estar libre. Fuera de una transacción, cada reserva se
+  confirma sola y un fallo posterior deja un hueco.
+- **Un hueco aquí no rompe nada.** Los códigos internos sólo tienen que ser únicos, no
+  consecutivos. Es distinto de `device_seq`, donde un hueco significa que falta un evento
+  y el servidor lo pedirá para siempre (`docs/08 §3.1`).
+- **El prefijo 2 es el rango de uso interno de GS1.** El EAN-13 se arma con
+  `construirEAN13Interno()` de `@papeleria/core`, que es la función con las pruebas del
+  dígito verificador; aquí no se hace aritmética de códigos a mano.
+
+`secuencias.test.ts` genera **1 000 códigos seguidos** y comprueba que no hay repetidos y
+que todos validan, además de que un prefijo inexistente falla con un mensaje que dice de
+dónde sale la fila, y que una transacción revertida no gasta el número.
+
 ## Lo que el runner garantiza
 
 | Garantía | Por qué importa |
@@ -199,8 +235,8 @@ docker rm -f papeleria-pruebas-pg
 > la que se conecta. Con el puerto cambiado, es imposible que le pegue al de verdad.
 
 Sin `DATABASE_URL_PRUEBAS` las dos pruebas que necesitan el motor real se **saltan**
-(aparecen como `skipped`); el resto corre igual contra PGlite. Son **122 pruebas con el
-PostgreSQL real** y **120 + 2 saltadas con sólo PGlite**.
+(aparecen como `skipped`); el resto corre igual contra PGlite. Son **130 pruebas con el
+PostgreSQL real** y **128 + 2 saltadas con sólo PGlite**.
 
 El test levanta un PGlite limpio, aplica las migraciones, hace lo mismo en el
 Postgres, y compara los dos catálogos línea a línea (tablas, columnas con su tipo

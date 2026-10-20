@@ -112,6 +112,7 @@ describe('esquema: estructura', () => {
 
     expect(rows.map((r) => r.tablename)).toEqual([
       'audit_log',
+      'barcode_sequences',
       'cash_sessions',
       'categories',
       'device_counters',

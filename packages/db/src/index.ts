@@ -10,6 +10,7 @@
  *   `esquema`      lee el catálogo y compara PGlite contra Postgres línea a línea
  *   `adaptadores`  envuelve PGlite o `pg` en la interfaz mínima que el runner espera
  *   `contadores`   device_seq, HLC y folio local: números sin huecos y sin repetir
+ *   `secuencias`   el código interno EAN-13: reservado en la base, nunca en el navegador
  *   `eventos`      `emitirEvento()`: estado + evento + auditoría en una transacción
  *   `autorizacion` carga permisos, políticas y step-up de la base, y llama a `evaluar()`
  *   `auth`         contraseñas (argon2id), tokens, dispositivos y sesiones
@@ -26,6 +27,7 @@ export * from './hash';
 export * from './esquema';
 export * from './adaptadores';
 export * from './contadores';
+export * from './secuencias';
 export * from './eventos';
 export * from './autorizacion';
 export * from './auth';

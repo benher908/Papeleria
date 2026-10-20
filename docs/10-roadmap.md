@@ -64,7 +64,7 @@ gantt
 |---|-----------|------------------------|--------|
 | 0.1 | Monorepo con pnpm workspaces | `pnpm -r build` compila los 3 paquetes | 🟡 workspaces listos y **`apps/web` creado**; falta `apps/api` |
 | 0.2 | `packages/core` con dominio y dinero | `bigint` en centavos + `roundHalfUp` con tests | ✅ **195 pruebas en verde** (+ EAN-13, precios y totales; desde 0.5: ULID, UUID v7 y el reloj lógico híbrido; desde 0.6: `evaluar()` y la gramática de condiciones; desde 0.7: las reglas puras de contraseña y sesión; desde 0.8: el lector HID) |
-| 0.3 | `packages/db/migrations/0001..0003` | Se aplican en **PGlite y Postgres**, verificado en CI | ✅ **38 pruebas en verde** (hoy 122, con la 0004, la 0005 y el login), y verificado también a mano contra un PostgreSQL 16.14 real: los dos motores acaban con el **mismo esquema, línea por línea** (tablas, columnas con tipo y `NOT NULL`, índices, restricciones, funciones y disparadores). El flujo de CI levanta ese mismo Postgres; falta empujarlo a GitHub para que corra solo |
+| 0.3 | `packages/db/migrations/0001..0003` | Se aplican en **PGlite y Postgres**, verificado en CI | ✅ **38 pruebas en verde** (hoy 128, con la 0004, la 0005, la 0006 y el login), y verificado también a mano contra un PostgreSQL 16.14 real: los dos motores acaban con el **mismo esquema, línea por línea** (tablas, columnas con tipo y `NOT NULL`, índices, restricciones, funciones y disparadores). El flujo de CI levanta ese mismo Postgres; falta empujarlo a GitHub para que corra solo |
 | 0.4 | **PGlite en Web Worker** con cliente tipado | Dos pestañas abiertas **no** corrompen la BD | ✅ **Verificado en un navegador real, con dos pestañas abiertas.** Una es *líder* y la otra *seguidora*; ninguna consulta se entrelaza. En la prueba de estrés —las dos peleando por la misma fila— **261 transacciones en 4 s**, `contador == marcas` exacto y **0 filas perdidas**. Y al cerrar la pestaña líder, otra toma el relevo sin que se note. De paso apareció la restricción que más se siente: en el modo por defecto PGlite **espera el volcado a disco después de cada consulta** (3 transacciones/s frente a 64 con `relaxedDurability`). Se usa `relaxedDurability` y se llama a `sincronizar()` tras las escrituras que no se pueden perder — con una corrección que llegó en 0.7: en modo relajado `syncToFs()` **no espera** el volcado (y lo descarta si ya hay uno en marcha), así que `sincronizar()` reduce la ventana pero no la cierra. Está documentado como deuda con su remedio en [`apps/web/README.md`](../apps/web/README.md) |
 | 0.5 | `emitirEvento()` + `outbox` | Una venta de prueba escribe estado + evento en una transacción | ✅ **Hecho y verificado en cuatro sitios.** La venta de prueba escribe venta, líneas, movimiento de stock, evento en la cola y auditoría; forzando un fallo **después** de escribir el estado, la base queda idéntica, contadores incluidos (ni un folio gastado, ni un hueco en `device_seq`). El HLC no retrocede aunque el reloj del PC se vaya a 2010. Probado contra **PGlite** y contra **PostgreSQL 16.14 real**, y a mano en el navegador (sección 4 del panel de diagnóstico). De paso apareció lo que el diseño daba por hecho y no existía: `device_counters`, `folio_counters` y `devices.codigo` (migración `0004_eventos.sql`) |
 | 0.6 | `evaluar()` (RBAC+ABAC) con un rol | Tabla de tests de políticas en verde | ✅ **Hecho, y la tabla del doc 06 §9 corre contra las reglas reales.** `evaluar()` es puro y sin IO (corre igual en la caja, en el celular y en el servidor); **`packages/db/src/autorizacion.ts`** es quien carga permisos, políticas y step-up de las tablas, dentro de la transacción del evento. Las **30 filas** de `0005_politicas.sql` cubren las 31 reglas del §5 (P20 y P23 son RBAC puro; P21 son dos permisos). Tres cosas que el diseño no tenía: el lado derecho de una comparación puede ser **otro campo** (sin eso P1 —"precio nuevo menor al costo"— no se puede escribir, y por eso 0002 no sembró nada); `gt_abs`, porque la diferencia de un arqueo puede ser faltante o sobrante; y un **catálogo cerrado de campos** validado al cargar, que lanza con el nombre mal escrito en vez de apagar una regla en silencio |
@@ -132,6 +132,13 @@ que pediste. Media hora de trabajo que te ahorra semanas.
 | 1.9 | `shelf_labels` con variantes | Escanear `ANAQ-A-3-12` abre 3 opciones de lápiz |
 | 1.10 | Importación desde Excel/CSV | Subes tu lista actual de productos de una vez |
 | 1.11 | **`outbox` + HLC** desde el primer día | Los eventos se generan con `device_seq` y `hlc` correctos |
+
+**Hecho hasta ahora:** **1.2** (desde F0.2: `digitoVerificadorEAN13`, `validaEAN13`,
+prefijo interno `2`, Code 128 y códigos de ubicación) y **1.3** (`0006_secuencias.sql` +
+`packages/db/src/secuencias.ts`): la secuencia se reserva con un `UPDATE ... RETURNING`
+atómico dentro de la transacción del producto, y **1 000 códigos seguidos salen únicos y
+con el verificador correcto**, contra PGlite y contra PostgreSQL 16. El resto de F1
+depende de la interfaz de producto (1.1 y de ahí en adelante).
 
 ### El hito real de F1
 
@@ -409,8 +416,9 @@ Si de todo el documento solo puedes ejecutar tres cosas:
 
 Y después: **F0, tarea por tarea** — 0.9 (la cámara) y luego 0.8.
 
-> 0.2, 0.3, 0.4, 0.5, 0.6, 0.7 y 0.8 ya están hechas: `pnpm test` corre **317 pruebas** sobre
+> 0.2, 0.3, 0.4, 0.5, 0.6, 0.7 y 0.8 ya están hechas: `pnpm test` corre **325 pruebas** sobre
 > dinero, EAN-13, precios, totales, ULID, UUID v7, reloj lógico, migraciones, esquema,
 > la transacción que ata cada cambio del negocio a su evento, las 10 políticas del
 > doc 06 §9 contra las reglas sembradas, el login local (contraseña, sesión y
-> vencimiento) y el lector HID. Corre `pnpm test` una vez y verás el punto de partida.
+> vencimiento), el lector HID y los códigos internos (1 000 sin repetir). Corre
+> `pnpm test` una vez y verás el punto de partida.

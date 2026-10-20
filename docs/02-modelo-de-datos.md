@@ -643,13 +643,16 @@ packages/db/migrations/
   0003_seed_catalogos.sql     -- unidades, tasas de impuesto, categorías base
   0004_eventos.sql            -- device_counters, folio_counters, devices.codigo (doc 08)
   0005_politicas.sql          -- las 30 reglas de autorización, como datos (doc 06)
-  0006_precios.sql            -- PENDIENTE: margin_rules + precio_fijo/margen_override (doc 12)
+  0006_secuencias.sql         -- barcode_sequences: el código interno, reservado en la base (doc 03 §4)
+  0007_precios.sql            -- PENDIENTE: margin_rules + precio_fijo/margen_override (doc 12)
 ```
 
-**Estado:** `0001`–`0005` implementadas y probadas (`packages/db`, 122 pruebas en verde).
-Los números no salieron como este plan: al llegar la fase F0 entraron antes los **eventos**
-(`0004`, doc 08) y las **políticas** (`0005`, doc 06) que las vistas de reportes o la
-búsqueda full-text, que siguen pendientes. `0006` queda reservada para los precios (doc 12).
+**Estado:** `0001`–`0006` implementadas y probadas (`packages/db`, 130 pruebas en verde,
+128 de ellas sin necesidad de un motor externo). Los números no salieron como este plan: al
+llegar la fase F0 entraron antes los **eventos** (`0004`, doc 08) y las **políticas**
+(`0005`, doc 06) que las vistas de reportes o la búsqueda full-text, que siguen pendientes.
+El generador de códigos internos (`0006`) se adelantó a los precios porque F1 lo necesita
+antes que F2; `0007` queda reservada para `margin_rules` (doc 12).
 
 Al escribirlas aparecieron cinco cosas que este documento decía mal y que quedan
 corregidas en los archivos. Ninguna era teórica: las cinco rompían la migración.

@@ -447,11 +447,29 @@ describe('stepUpVigente', () => {
 // ─────────────────────────── autorizar() contra la base ───────────────────────────
 
 describe('autorizar()', () => {
+  /**
+   * Mediodía local de hoy.
+   *
+   * `autorizar()` sin `ahora` usa el reloj de verdad, y eso hacía que esta batería
+   * dependiera de la hora: P13 (venta nocturna) pide step-up a partir de las 20:00,
+   * así que las ventas de $3,000 pasaban a la mañana y fallaban a las 20:07. Lo
+   * encontró una corrida real, no una revisión. Se fija la hora y se acabó.
+   *
+   * Las pruebas de la política nocturna en sí viven en `evaluar()` con su contexto
+   * explícito; aquí lo que se prueba es el camino contra la base.
+   */
+  function mediodia(): number {
+    const fecha = new Date();
+    fecha.setHours(12, 0, 0, 0);
+    return fecha.getTime();
+  }
+
   const entradaVenta = {
     usuarioId: USUARIO_DUENO,
     dispositivoId: ID_TERMINAL,
     permiso: 'ventas:crear',
     recurso: { tipo: 'venta' as const },
+    ahora: mediodia(),
   };
 
   test('una venta normal pasa, sin obligaciones', async () => {

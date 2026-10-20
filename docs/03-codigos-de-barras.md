@@ -185,6 +185,13 @@ export async function generarCodigoInterno(db, prefijo = '2'): Promise<string> {
 }
 ```
 
+> **El ejemplo de arriba no compila tal cual y no debe copiarse.** Tenía una línea de
+> relleno que no hacía nada (`const relleno = …padEnd(0, '0')`) y construía la base a mano;
+> la implementación real usa `construirEAN13Interno(secuencial, prefijo)` de
+> `@papeleria/core`, que es la que tiene las pruebas del dígito verificador. Lo que **sí**
+> se copió es la idea: `UPDATE ... RETURNING` atómico dentro de la transacción del
+> producto, en `packages/db/src/secuencias.ts` (migración `0006_secuencias.sql`).
+
 ### Si algún día son dos dispositivos generando
 
 No improvises. **Asigna bloques**:
@@ -460,7 +467,7 @@ Pantalla `/<span>etiquetas</span>`:
 
 - [ ] `digitoVerificadorEAN13` con tests contra valores conocidos (incluido el prefijo 20–29)
 - [ ] `validaEAN13` usado al capturar códigos a mano
-- [ ] Generador interno con `barcode_sequences` + `UPDATE ... RETURNING` (atómico)
+- [x] Generador interno con `barcode_sequences` + `UPDATE ... RETURNING` (atómico)
 - [ ] `UNIQUE (codigo)` global en `product_barcodes` (red de seguridad contra duplicados)
 - [ ] Soporte de **múltiples códigos por producto** (fábrica, interno, paquete, caja)
 - [ ] `shelf_labels` con variantes para la pantalla de selección rápida

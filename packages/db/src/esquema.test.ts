@@ -417,7 +417,7 @@ describe('esquema: códigos de barras', () => {
     await cliente.query(
       `INSERT INTO product_barcodes (id, product_id, codigo, simbologia, es_interno)
        VALUES ('01900000-0000-7000-9000-000000000401', '01900000-0000-7000-9000-000000000301',
-               '2000000000017', 'ean13', true)`,
+               '2000000000015', 'ean13', true)`,
     );
 
     // Es el bug más caro del POS: escanear un código y agregar el producto
@@ -426,9 +426,33 @@ describe('esquema: códigos de barras', () => {
       cliente.query(
         `INSERT INTO product_barcodes (id, product_id, codigo, simbologia)
          VALUES ('01900000-0000-7000-9000-000000000402', '01900000-0000-7000-9000-000000000302',
-                 '2000000000017', 'ean13')`,
+                 '2000000000015', 'ean13')`,
       ),
     ).rejects.toThrow(/uq_barcode/);
+  });
+
+  test('un producto puede tener varios códigos: el de fábrica y el interno', async () => {
+    const ID_LAPIZ = '01900000-0000-7000-9000-000000000303';
+    await crearProducto(ID_LAPIZ, 'Lápiz del 2');
+
+    // El fabricante imprime uno y nosotros pegamos otro. El mismo producto, dos
+    // formas de escanearlo: eso es lo que `uq_barcode` NO impide, porque la
+    // restricción es sobre el código, no sobre el producto.
+    await cliente.query(
+      `INSERT INTO product_barcodes (id, product_id, codigo, simbologia, es_primario)
+       VALUES ('01900000-0000-7000-9000-000000000404', $1, '4006381333931', 'ean13', true),
+              ('01900000-0000-7000-9000-000000000405', $1, '2000000000022', 'ean13', false)`,
+      [ID_LAPIZ],
+    );
+
+    const { rows } = await cliente.query<{ codigo: string }>(
+      `SELECT codigo FROM product_barcodes
+        WHERE product_id = $1 AND deleted_at IS NULL
+        ORDER BY codigo`,
+      [ID_LAPIZ],
+    );
+
+    expect(rows.map((r) => r.codigo)).toEqual(['2000000000022', '4006381333931']);
   });
 
   test('rechaza una simbología desconocida', async () => {

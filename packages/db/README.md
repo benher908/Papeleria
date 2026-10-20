@@ -235,8 +235,8 @@ docker rm -f papeleria-pruebas-pg
 > la que se conecta. Con el puerto cambiado, es imposible que le pegue al de verdad.
 
 Sin `DATABASE_URL_PRUEBAS` las dos pruebas que necesitan el motor real se **saltan**
-(aparecen como `skipped`); el resto corre igual contra PGlite. Son **130 pruebas con el
-PostgreSQL real** y **128 + 2 saltadas con sólo PGlite**.
+(aparecen como `skipped`); el resto corre igual contra PGlite. Son **131 pruebas con el
+PostgreSQL real** y **129 + 2 saltadas con sólo PGlite**.
 
 El test levanta un PGlite limpio, aplica las migraciones, hace lo mismo en el
 Postgres, y compara los dos catálogos línea a línea (tablas, columnas con su tipo

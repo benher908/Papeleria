@@ -4,7 +4,7 @@ Documentación de diseño. Un solo desarrollador, un solo usuario (el dueño), c
 
 > **Estado:** el diseño está completo. Además del núcleo, ya están escritos el esquema y
 > las migraciones ([`packages/db`](../packages/db)), la base local en el navegador, su
-> entrada y el lector HID ([`apps/web`](../apps/web)). `pnpm test` corre **325 pruebas**
+> entrada y el lector HID ([`apps/web`](../apps/web)). `pnpm test` corre **326 pruebas**
 > sobre dinero, códigos de barras, precios, totales, migraciones, la transacción que ata
 > cada cambio a su evento, las políticas de autorización, el login local y el lector de
 > códigos.

@@ -17,7 +17,7 @@ celular. También es el punto de venta.
 | Diseño completo (12 documentos) | ✅ terminado — [`docs/`](docs/README.md) |
 | Núcleo: dinero, códigos de barras, precios, totales, autorización, contraseñas | ✅ **escrito y con 195 pruebas en verde** |
 | Probador de cámara y códigos (`tools/prueba-camara`) | ✅ **listo — falta probarlo en tu celular** |
-| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 128 pruebas en verde** (130 con PostgreSQL 16) — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
+| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 129 pruebas en verde** (131 con PostgreSQL 16) — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
 | Motor de ventas: `emitirEvento()` + `outbox` | ✅ **estado, evento y auditoría en una sola transacción** — ni una venta a medias, ni un folio gastado |
 | Autorización: `evaluar()` + las 30 reglas sembradas | ✅ **la tabla de casos del doc 06 §9 en verde, contra las reglas reales** |
 | Base local en el navegador (`apps/web`) | ✅ **funcionando** — PGlite en un Web Worker, verificado con **dos pestañas abiertas** |
@@ -191,7 +191,7 @@ herramienta) en [`docs/11 §1`](docs/11-despliegue-gratuito.md) y
 
 ### 2. Base de datos: esquema y migraciones — ✅ hecho
 
-`packages/db` ya tiene las migraciones `0001`–`0006` y 128 pruebas en verde. El
+`packages/db` ya tiene las migraciones `0001`–`0006` y 129 pruebas en verde. El
 esquema está descrito en `docs/02` y `docs/06`, y la regla que lo sostiene todo es
 una: **el mismo archivo .sql corre en PGlite (el navegador) y en PostgreSQL 16 (el
 servidor)**. No es una aspiración: hay una prueba que aplica las migraciones a los

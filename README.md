@@ -15,13 +15,14 @@ celular. También es el punto de venta.
 | Parte | Estado |
 |---|---|
 | Diseño completo (12 documentos) | ✅ terminado — [`docs/`](docs/README.md) |
-| Núcleo: dinero, códigos de barras, precios, totales, autorización, contraseñas | ✅ **escrito y con 178 pruebas en verde** |
+| Núcleo: dinero, códigos de barras, precios, totales, autorización, contraseñas | ✅ **escrito y con 195 pruebas en verde** |
 | Probador de cámara y códigos (`tools/prueba-camara`) | ✅ **listo — falta probarlo en tu celular** |
 | Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 122 pruebas en verde** — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
 | Motor de ventas: `emitirEvento()` + `outbox` | ✅ **estado, evento y auditoría en una sola transacción** — ni una venta a medias, ni un folio gastado |
 | Autorización: `evaluar()` + las 30 reglas sembradas | ✅ **la tabla de casos del doc 06 §9 en verde, contra las reglas reales** |
 | Base local en el navegador (`apps/web`) | ✅ **funcionando** — PGlite en un Web Worker, verificado con **dos pestañas abiertas** |
 | Entrada: crear la cuenta y entrar (`0.7`) | ✅ **funcionando sin servidor** — la sesión persiste al recargar, el `logout` funciona, y verificado en un navegador real |
+| Lector de códigos de barras HID (`0.8`) | ✅ **funcionando** — un lector de $25 se presenta como teclado; el panel lo simula y distingue a una persona de una máquina |
 | API, interfaz de producto | ⬜ no empezado (el diseño está listo) |
 
 Lo que ya funciona hoy, en `packages/core`: aritmética de dinero en centavos
@@ -121,6 +122,7 @@ Papeleria/
 │   ├── core/                    ⭐ el núcleo: sin dependencias de plataforma
 │   │   ├── src/dinero.ts        centavos, redondeo, IVA, formato, parseo
 │   │   ├── src/auth/            reglas de contraseña y tiempos de sesión (puras)
+│   │   ├── src/escaneo/         el lector HID: la máquina que distingue a una persona
 │   │   ├── src/codigos-barras/ean13.ts
 │   │   ├── src/precios/calcularPrecio.ts
 │   │   └── src/ventas/totales.ts
@@ -139,6 +141,7 @@ Papeleria/
 │   └── web/                     la app del navegador
 │       ├── src/app.ts                arranque: capas, base, sesión reanudada o entrada
 │       ├── src/auth/                 la entrada: crear la cuenta o entrar, y dónde se guarda el token
+│       ├── src/escaneo/              la cola de escaneo y el adaptador del lector HID
 │       ├── src/db/pglite.worker.ts   el Web Worker dueño de la base
 │       ├── src/db/baseLocal.ts       el cliente tipado (consultar, ejecutar, transacción)
 │       ├── src/db/migraciones.ts     los .sql de packages/db, incrustados por Vite
@@ -239,8 +242,16 @@ Lo que sigue, en orden ([`docs/10`](docs/10-roadmap.md), fase F0):
   hay servidor, así que el token vive en `localStorage` como apaño temporal y marcado como
   tal; `apps/api` (F4) lo sustituye. Sin servidor tampoco hay «olvidé mi contraseña» —lo
   resuelven las passkeys de F6, y la pantalla lo avisa. Ver [`docs/07 §2.4`](docs/07-sesiones-y-seguridad.md).
+- **0.8 — Lector HID.** ✅ **Hecho y verificado en un navegador real.** Un lector de
+  códigos de $25 se conecta por USB o Bluetooth y el sistema operativo lo ve como un
+  **teclado**: no hay driver que instalar. Lo único que lo distingue de una persona es que
+  teclea a menos de 50 ms por carácter y cierra con Enter; esa máquina está en `core`,
+  pura y probada con tiempos inyectados. El adaptador escucha en captura, **se come el
+  Enter del lector** —para que no envíe el formulario abierto— y publica en la **cola de
+  escaneo**, el mismo punto por el que entrará el celular. Se prueba sin lector en la
+  sección 5 del panel: simula un escaneo rápido y uno humano lento, y el lento no dispara.
 
-Lo que sigue es la prueba de cámara (0.9) y el lector HID (0.8).
+Sólo queda la prueba de cámara (0.9), que necesita tu celular.
 
 ### 3. La caja (POS) primero, el inventario después
 

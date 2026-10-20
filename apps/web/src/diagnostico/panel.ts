@@ -10,6 +10,7 @@
 
 import { DIRECTORIO_POR_DEFECTO, baseLocal, type BaseLocal } from '../db/baseLocal';
 import { migracionesDeFabrica } from '../db/migraciones';
+import type { ColaEscaneo, EventoEscaneo } from '../escaneo/cola';
 import { aviso, capasQueFaltan, crear, esperar, mensaje } from '../ui';
 import { comprobarCatalogo } from './catalogo';
 import { ejecutarPrueba, reiniciar, type ResultadoPrueba } from './multipestana';
@@ -23,7 +24,10 @@ import {
 
 type Celda = string | Node;
 
-export async function montarPanel(raiz: HTMLElement): Promise<void> {
+/** Un EAN-13 con dígito verificador correcto, para que la simulación no parezca un error. */
+const CODIGO_DE_PRUEBA = '7501234567893';
+
+export async function montarPanel(raiz: HTMLElement, cola: ColaEscaneo): Promise<void> {
   raiz.replaceChildren();
   const panel = crear('div', 'panel');
   raiz.append(panel);
@@ -72,6 +76,7 @@ export async function montarPanel(raiz: HTMLElement): Promise<void> {
   panel.append(seccionEsquema());
   panel.append(seccionDosPestanas());
   panel.append(seccionOutbox());
+  panel.append(seccionLectorHid());
 
   const cuerpoVersion = crear('p', 'nota');
   panel.append(cuerpoVersion);
@@ -327,6 +332,103 @@ export async function montarPanel(raiz: HTMLElement): Promise<void> {
         }
       })();
     });
+
+    return seccion;
+  }
+
+  // ── sección 5: el lector HID ───────────────────────────────────────────────
+  function seccionLectorHid(): HTMLElement {
+    const { seccion, cuerpo } = tarjeta(
+      '5 · Lector de códigos (HID)',
+      'Un lector USB o Bluetooth se presenta como un teclado: no necesita driver. Lo único que lo distingue de una persona es la velocidad a la que teclea.',
+    );
+
+    cuerpo.append(
+      crear(
+        'p',
+        'explicacion',
+        'Un lector teclea a menos de 30 ms por carácter y termina con Enter; una persona no sostiene ese ritmo. Sin lector, los botones de abajo simulan uno de verdad: disparan las mismas teclas, por el mismo camino, y la diferencia entre los dos es sólo la velocidad.',
+      ),
+    );
+
+    const botones = crear('div', 'botones');
+    const simular = crear('button', 'boton', 'Simular un lector (10 ms/carácter)');
+    const humano = crear('button', 'boton secundario', 'Simular una persona (250 ms/carácter)');
+    botones.append(simular, humano);
+    cuerpo.append(botones);
+
+    const estado = crear('div', 'resultado');
+    cuerpo.append(estado);
+
+    const nota = crear('p', 'nota');
+    cuerpo.append(nota);
+
+    let total = 0;
+
+    const pintar = (evento?: EventoEscaneo): void => {
+      if (evento !== undefined) total += 1;
+
+      const velocidad =
+        evento?.ms_por_caracter === undefined ? '—' : `${evento.ms_por_caracter} ms/carácter`;
+
+      estado.replaceChildren(
+        tabla(
+          ['dato', 'valor'],
+          [
+            ['último código', evento?.codigo ?? '—'],
+            ['origen', evento?.origen ?? '—'],
+            ['velocidad', velocidad],
+            ['leído', evento === undefined ? '—' : new Date(evento.leido_at).toLocaleTimeString()],
+            ['escaneos en esta sesión', String(total)],
+          ],
+        ),
+      );
+    };
+    pintar();
+
+    // La sección se pinta con lo que ya haya llegado y se queda escuchando. Al salir se
+    // tira la cola entera, así que esta suscripción no sobrevive al cierre de sesión.
+    cola.alEscanear((evento) => pintar(evento));
+
+    /**
+     * Dispara teclas de verdad por el mismo camino que un lector.
+     *
+     * No se llama a la cola directamente a propósito: si la simulación saltara el
+     * adaptador, no probaría nada de lo que hay que probar (la captura de teclas, la
+     * heurística de velocidad y el `preventDefault` del Enter).
+     */
+    async function simularCon(msPorCaracter: number): Promise<void> {
+      simular.disabled = true;
+      humano.disabled = true;
+      nota.textContent = '';
+
+      try {
+        for (const tecla of CODIGO_DE_PRUEBA) {
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: tecla, bubbles: true }));
+          await esperar(msPorCaracter);
+        }
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+        if (msPorCaracter >= 100) {
+          nota.textContent =
+            'A 250 ms por carácter no apareció ningún escaneo nuevo: es lo que hace una persona, y el lector no puede confundirlo con una máquina. Para que cuente, baja el intervalo.';
+        }
+      } finally {
+        simular.disabled = false;
+        humano.disabled = false;
+      }
+    }
+
+    simular.addEventListener('click', () => void simularCon(10));
+    humano.addEventListener('click', () => void simularCon(250));
+
+    cuerpo.append(
+      crear(
+        'p',
+        'nota',
+        'Con un lector de verdad: haz clic fuera de cualquier campo, escanéa y el código aparece aquí y en la consola. Configúralo con sufijo Enter; si no, no hay forma de saber dónde acaba el código.',
+      ),
+    );
 
     return seccion;
   }

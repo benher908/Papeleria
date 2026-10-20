@@ -237,6 +237,52 @@ que se corte la luz justo ahí. Lo que no se hace es dejarlo apuntado al revés.
 
 ---
 
+## El lector de códigos (HID)
+
+Un lector de $25 no necesita driver: se presenta como **teclado** y "teclea" el código a
+velocidad de máquina, cerrado con `Enter`. Lo único que lo distingue de una persona es la
+velocidad, y de ahí sale toda la heurística (docs/04 §6.1):
+
+- una persona no sostiene **menos de 50 ms por carácter**;
+- si un carácter llega más lento, el buffer **se corta** y empieza de cero;
+- por eso, cuando el `Enter` cierra con al menos `largoMinimo` caracteres, esos caracteres
+  llegaron en ráfaga. No hay que medir la media.
+
+La máquina es pura (`packages/core/src/escaneo/lectorHid.ts`): recibe `(tecla, ahora)` y
+no toca el DOM, así que una ráfaga de 13 caracteres se prueba en Node sin esperar 130 ms.
+El adaptador (`src/escaneo/hid.ts`) escucha en **captura** —antes que el campo enfocado—,
+consume el `Enter` del lector y publica en la cola.
+
+### Cómo probarlo sin lector
+
+Sección **5 · Lector de códigos (HID)** del panel, con dos botones:
+
+| Botón | Qué hace | Qué debe pasar |
+|---|---|---|
+| Simular un lector (10 ms/carácter) | Dispara las teclas **de verdad**, por el mismo `keydown` que un lector | El código aparece en la tabla y en la consola (`[hid] 7501234567893 · 10 ms/carácter`) |
+| Simular una persona (250 ms/carácter) | Lo mismo, más lento | **No** aparece nada: es una persona, y el lector no debe dispararse |
+
+Los dos pasan por el camino real (captura, heurística, `preventDefault` del Enter y cola).
+Si la simulación llamara a la cola directamente no probaría nada de eso.
+
+### Dos decisiones que conviene no deshacer
+
+1. **El `Enter` se consume siempre que cierre un código, también dentro de un campo.** Si
+   no, el lector enviaría el formulario abierto y "cobraría" una venta sin querer. Es el
+   bug clásico del POS y la razón de escuchar en captura.
+2. **No hay antirrebote.** Escanear dos veces el mismo producto son **dos piezas**, y un
+   antirrebote rompería esa operación. El antirrebote de 800 ms del diseño es para la
+   **cámara**, que ve el mismo código en muchos fotogramas; un láser dispara una vez por
+   pulsación.
+3. **Con el foco en un campo de texto, los caracteres sí llegan al campo**; sólo se consume
+   el `Enter`. Es inevitable: hasta el cuarto carácter no se puede saber que es un lector,
+   y consumir desde el primero rompería a una persona escribiendo. Con el foco fuera de
+   cualquier campo, en cambio, la ráfaga no llega al DOM (evita "búsquedas fantasma"). En
+   F2 hay que decidir **una** cosa por campo —o el buscador usa el texto, o la cola usa el
+   evento— y esa decisión se toma en la caja, no aquí.
+
+---
+
 ## Piezas
 
 | Archivo | Qué es |
@@ -246,6 +292,8 @@ que se corte la luz justo ahí. Lo que no se hace es dejarlo apuntado al revés.
 | `src/auth/pantalla.ts` | La entrada: primer arranque (crear la cuenta) o login. No hashea ni compara nada; llama a `@papeleria/db` y muestra lo que le contesten. |
 | `src/auth/almacen.ts` | El token y el dispositivo en `localStorage`. El comentario de arriba explica por qué es un **apaño temporal** hasta la cookie `httpOnly` de F4. |
 | `src/ui.ts` | Los ayudantes de interfaz compartidos (`crear`, `mensaje`, `esperar`, `aviso`, `capasQueFaltan`). |
+| `src/escaneo/cola.ts` | **La cola de escaneo**: el único punto por el que entra un código, venga del lector HID o (en F5) del celular. |
+| `src/escaneo/hid.ts` | El adaptador del lector HID: escucha en captura, **se come el Enter del lector** para que no envíe el formulario abierto y publica en la cola. La lógica de velocidad vive en `@papeleria/core`. |
 | `src/db/pglite.worker.ts` | El obrero que **es dueño** de la base. Sólo lo ejecuta la pestaña líder; ahí corren las migraciones, una sola vez por origen. |
 | `src/db/baseLocal.ts` | El cliente tipado. Nadie más toca PGlite: la app usa `consultar`, `ejecutar`, `enTransaccion`, `sincronizar`. |
 | `src/db/cliente.ts` | Traduce ese cliente al contrato `query`/`exec`/`transaction` que espera `@papeleria/db`, y expone `enTransaccionDuradera()`: la transacción **más** el volcado, para las escrituras que no se pueden perder (ver *Lo que `sincronizar()` no hace*, más arriba). |

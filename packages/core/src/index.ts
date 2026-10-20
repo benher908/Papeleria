@@ -18,4 +18,5 @@ export * from './ids/ulid';
 export * from './ids/uuidv7';
 export * from './sync/hlc';
 export * from './auth';
+export * from './escaneo';
 export * from './policies';

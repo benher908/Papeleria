@@ -28,6 +28,8 @@ import {
 import { baseLocal, type BaseLocal } from './db/baseLocal';
 import { comoClienteTransaccional, enTransaccionDuradera } from './db/cliente';
 import { montarPanel } from './diagnostico/panel';
+import { crearColaEscaneo } from './escaneo/cola';
+import { instalarLectorHid } from './escaneo/hid';
 import { aviso, capasQueFaltan, crear, mensaje } from './ui';
 
 export async function montarApp(raiz: HTMLElement): Promise<void> {
@@ -61,9 +63,22 @@ export async function montarApp(raiz: HTMLElement): Promise<void> {
   let hayCuenta = await hayUsuarios(comoClienteTransaccional(base));
   let sesion: SesionIniciada | null = null;
 
+  /**
+   * El lector HID sólo escucha mientras hay sesión abierta.
+   *
+   * En la pantalla de entrada, cada tecla es una contraseña y no hay nada que escanear;
+   * dejar el lector puesto ahí sería, además, una forma de que el `preventDefault()` del
+   * Enter se comiera el envío del formulario.
+   */
+  let desinstalarHid: (() => void) | null = null;
+
   function mostrarCaja(actual: SesionIniciada): void {
     sesion = actual;
     raiz.replaceChildren();
+
+    desinstalarHid?.();
+    const cola = crearColaEscaneo();
+    desinstalarHid = instalarLectorHid(cola);
 
     const barra = crear('div', 'barra');
     barra.append(
@@ -76,11 +91,13 @@ export async function montarApp(raiz: HTMLElement): Promise<void> {
 
     const contenedor = crear('div');
     raiz.append(contenedor);
-    void montarPanel(contenedor);
+    void montarPanel(contenedor, cola);
   }
 
   function mostrarEntrada(nota?: string): void {
     sesion = null;
+    desinstalarHid?.();
+    desinstalarHid = null;
     montarEntrada(raiz, base, {
       hayCuenta,
       ...(nota === undefined ? {} : { nota }),

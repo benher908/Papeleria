@@ -604,7 +604,7 @@ Este modo es la joya operativa del sistema y casi ningún POS comercial barato l
 | Error | Cómo lo evitamos |
 |-------|------------------|
 | "Puse el servidor en el PC pero la cámara no abre" | Documentado desde el inicio: HTTPS obligatorio. VÍA A (VPS) + VÍA B (mkcert). |
-| El escáner agrega el producto dos veces | Debounce de 800 ms por código + `ticket` de correlación + `preventDefault` en el Enter del lector HID |
+| El escáner agrega el producto dos veces | En la **cámara**, antirrebote de 800 ms por código + `ticket` de correlación (ve el mismo código en muchos fotogramas). En el **HID**, `preventDefault` en el Enter y **ningún antirrebote**: un láser dispara una vez por pulsación, y "escanear dos veces = dos piezas" es una operación legítima |
 | El celular dice "conectado" pero no llega nada | Heartbeat de 20 s + `readyState` + reconexión con backoff + aviso al cajero si `sin respuesta > 1.5 s` |
 | El celular emparejado sigue funcionando después de robarse | `devices.revoked_at` + verificación en cada conexión WS + cierre con código 4403 |
 | Alguien en el wifi manda escaneos falsos | Token de 256 bits atado a `device_id` + `terminal_id` + rate limit + el carrito siempre se ve en la PC |
@@ -628,7 +628,7 @@ Este modo es la joya operativa del sistema y casi ningún POS comercial barato l
 - [ ] Feedback triple: vibración, sonido y texto (reutilizando un solo `<audio>`)
 - [ ] Botón de **linterna** y botón de **"escribir código"** siempre visibles
 - [ ] `wakeLock` mientras el modo escáner está activo
-- [ ] `useColaEscaneo` unificando HID + celular + manual
-- [ ] `useBarcodeWedge` con `preventDefault` en el Enter (para no "cobrar" sin querer)
+- [x] **La cola de escaneo** unificando HID + celular + manual (`apps/web/src/escaneo/cola.ts`; hoy emite el HID, el celular llega en F5)
+- [x] **El lector HID** con `preventDefault` en el Enter (tarea 0.8): la máquina pura en `packages/core/src/escaneo/lectorHid.ts` y el adaptador en `apps/web/src/escaneo/hid.ts`. **Sin antirrebote a propósito**: escanear dos veces el mismo código son dos piezas; el antirrebote de 800 ms es de la cámara, no del láser
 - [ ] Modo **conteo** con avance y diferencias **en dinero**
 - [ ] Prueba de carga: 3 escaneos/s durante 5 minutos sin perder ninguno

@@ -749,8 +749,8 @@ Estado al cerrar la tarea 0.6. `✅` = hecho y con prueba; `🟡` = la mitad; `�
 - ✅ `policies` como **datos** en la base de datos, con `version`, `prioridad` y `activa`; las **30 filas** de `0005_politicas.sql` cubren las 31 reglas de §5
 - ✅ **Deny-overrides** implementado y con test explícito (en `packages/core` y en la tabla del §9)
 - ✅ `Decision.obligaciones` (step_up, motivo, notificar, marcar para revisión). `segunda_aprobacion` no existe: el `CHECK` de 0002 siempre aceptó cuatro, y una obligación que el catálogo no conoce es una regla que deja de proteger en silencio
-- 🟡 Step-up: el **mecanismo** está (tabla, consulta acotada a la acción y al objeto, obligación que desaparece al satisfacerse). La **interfaz** (PIN/passkey, 5 intentos, registro) es la tarea 0.7
-- ⬜ PIN con **argon2id**, validado **localmente** (tarea 0.7)
+- 🟡 Step-up: el **mecanismo** está (tabla, consulta acotada a la acción y al objeto, obligación que desaparece al satisfacerse). La **interfaz** (PIN/passkey, 5 intentos, registro) **se movió a F6**: la tarea 0.7 fue el login, no el PIN
+- 🟡 El **login** sí quedó hecho en 0.7: contraseña con **argon2id** (`packages/db/src/auth.ts`), validada **localmente** contra la base del navegador, con sesión que persiste y vence. Lo que falta es el **PIN** de desbloqueo y el step-up en la interfaz (F6). Detalle en [07 §2.4](07-sesiones-y-seguridad.md)
 - ⬜ Salida de emergencia: el bloqueo del PIN se puede levantar con passkey o contraseña
 - ⬜ Políticas firmadas con Ed25519 + verificación en el cliente + rechazo auditable
 - ✅ Políticas específicas de **offline** (P25–P31) sembradas. Excepción declarada: **el tope del 5 % de P28 no es representable** (ver §5) y queda abierto

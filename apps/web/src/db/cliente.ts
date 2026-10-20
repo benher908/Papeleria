@@ -31,6 +31,34 @@ export function comoClienteTransaccional(base: BaseLocal): ClienteTransaccional 
   };
 }
 
+/**
+ * Una transacción que además **pide** el volcado a disco antes de seguir.
+ *
+ * La base arranca con `relaxedDurability` (ver `pglite.worker.ts`): las consultas vuelven
+ * sin esperar al disco, y por eso va mucho más rápido. Lo que descubrió la verificación en
+ * navegador es que, en ese modo, `syncToFs()` **no espera**: lanza el volcado y vuelve, y
+ * además lo descarta si ya había uno en marcha (`if (this.#syncing) return`). Es decir:
+ * esto reduce la ventana en la que un `COMMIT` confirmado todavía no está en IndexedDB,
+ * pero **no la cierra**.
+ *
+ * Aun así se usa, porque reduce la ventana y porque el camino correcto —volcar y esperar—
+ * es exactamente lo que esta función hará el día que se apague `relaxedDurability`. Lo que
+ * NO se hace es prometer lo que no cumple: el riesgo está anotado en `apps/web/README.md`
+ * como deuda con su remedio, y afecta igual a las ventas, así que se decide una vez y para
+ * todo el sistema, no sólo para la autenticación.
+ *
+ * Se usa en las escrituras de sesión porque son las que crean o destruyen acceso: una
+ * cuenta que se crea y no llega a disco deja al dueño fuera de su propio sistema.
+ */
+export async function enTransaccionDuradera<T>(
+  base: BaseLocal,
+  cuerpo: (tx: ClienteSql) => Promise<T>,
+): Promise<T> {
+  const resultado = await base.enTransaccion((tx) => cuerpo(envolver(tx)));
+  await base.sincronizar();
+  return resultado;
+}
+
 function envolver(consultas: Consultas): ClienteSql {
   return {
     exec: (sql) => consultas.lote(sql),

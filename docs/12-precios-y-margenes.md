@@ -155,7 +155,7 @@ export type ResultadoPrecio = {
 > dos se contradicen, mandan las pruebas.
 
 ```ts
-// packages/core/src/precios/calcularPrecio.test.ts — parte de las 68 pruebas en verde.
+// packages/core/src/precios/calcularPrecio.test.ts — parte de las 178 pruebas en verde.
 // ⚠️ Estos valores NO están calculados a mano: los imprime el propio código.
 //    (La primera versión de este documento los tenía mal y las pruebas lo delataron.)
 

@@ -641,13 +641,15 @@ packages/db/migrations/
   0001_init.sql
   0002_rbac_abac.sql          -- roles, permissions, policies
   0003_seed_catalogos.sql     -- unidades, tasas de impuesto, categorías base
-  0004_vistas_reportes.sql
-  0005_busqueda_fulltext.sql
-  0006_precios.sql              -- margin_rules + precio_fijo/margen_override en products (doc 12)
+  0004_eventos.sql            -- device_counters, folio_counters, devices.codigo (doc 08)
+  0005_politicas.sql          -- las 30 reglas de autorización, como datos (doc 06)
+  0006_precios.sql            -- PENDIENTE: margin_rules + precio_fijo/margen_override (doc 12)
 ```
 
-**Estado:** `0001`–`0003` implementadas y probadas (`packages/db`, 36 pruebas en
-verde). `0004`–`0006` pendientes.
+**Estado:** `0001`–`0005` implementadas y probadas (`packages/db`, 122 pruebas en verde).
+Los números no salieron como este plan: al llegar la fase F0 entraron antes los **eventos**
+(`0004`, doc 08) y las **políticas** (`0005`, doc 06) que las vistas de reportes o la
+búsqueda full-text, que siguen pendientes. `0006` queda reservada para los precios (doc 12).
 
 Al escribirlas aparecieron cinco cosas que este documento decía mal y que quedan
 corregidas en los archivos. Ninguna era teórica: las cinco rompían la migración.

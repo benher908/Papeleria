@@ -12,6 +12,7 @@
  *   `contadores`   device_seq, HLC y folio local: números sin huecos y sin repetir
  *   `eventos`      `emitirEvento()`: estado + evento + auditoría en una transacción
  *   `autorizacion` carga permisos, políticas y step-up de la base, y llama a `evaluar()`
+ *   `auth`         contraseñas (argon2id), tokens, dispositivos y sesiones
  *
  * Todo lo de arriba es seguro en el navegador. Lo que NO lo es vive aparte:
  * `archivos` usa `node:fs` para leer los .sql del disco y se importa de
@@ -27,3 +28,4 @@ export * from './adaptadores';
 export * from './contadores';
 export * from './eventos';
 export * from './autorizacion';
+export * from './auth';

@@ -244,6 +244,51 @@ export const POLITICAS_SESION = {
 
 **Por qué el bloqueo por inactividad usa PIN y no re-login:** el dueño pone el PIN 20 veces al día. Si cada vez tuviera que teclear la contraseña, desactivaría el bloqueo. La seguridad que estorba es la seguridad que se desactiva.
 
+### 2.4 Lo que ya está hecho: el login local (tarea 0.7), y qué es todavía diseño
+
+Todo lo de arriba (passkeys, JWT EdDSA, cookie `httpOnly`, rotación de refresh) es el
+destino, y llega con el servidor (F4) y la seguridad completa (F6). Lo que **hoy** existe
+es el login mínimo y funciona sin ningún servidor, porque el requisito que manda aquí es
+**vender sin internet**: si el PC no arranca su base porque "falta el servidor de
+autenticación", el sistema no sirve.
+
+Lo que hay, en concreto:
+
+| Pieza | Dónde | Qué es hoy |
+|---|---|---|
+| Reglas puras | `packages/core/src/auth/` | `revisarContrasena()`, la escalera de teclado (`esUnaEscalera`), `retrasoTrasFallos()`, `POLITICAS_SESION` y `motivoDeVencimiento()`. Sin dependencias: corre igual en la caja y en el servidor |
+| Argon2id | `packages/db/src/auth.ts` | Con `hash-wasm` (WASM puro). Los **mismos parámetros del §1.2** (19 MiB, t=2, p=1) y el **mismo formato PHC**, así que el servidor de F4 podrá verificar los hashes que ya existen sin migrar nada |
+| Sesiones | `sessions` (migración `0001`) | Se crea una fila al entrar; se guarda el **SHA-256 del token**, nunca el token. Vencimiento por inactividad (30 min) y absoluto (12 h), que son los del §2.3 para el contexto `caja` |
+| Dispositivo | `devices` (migración `0004`) | Al entrar se empareja el PC como `C1` (`terminal`, `is_trusted`). El `codigo` es la fuente de verdad del folio |
+| Pantalla | `apps/web/src/auth/pantalla.ts` | Primer arranque (crear la cuenta de la dueña) o entrada, según haya o no usuarios |
+
+**Tres decisiones que conviene conocer antes de tocar esto:**
+
+1. **El token vive en `localStorage`, y sí, es una trampa (§3) — pero hoy no hay
+   alternativa.** Una cookie `httpOnly` la pone un servidor, y todavía no hay servidor:
+   el navegador no puede escribir su propia cookie protegida. Por eso el token es un
+   **apaño temporal** y está marcado como tal en `apps/web/src/auth/almacen.ts`. El día
+   que exista `apps/api` en F4, la cookie `httpOnly` ocupa su lugar y esto se borra. Lo
+   que **no** se hace es fingir que la cookie ya está: el riesgo de XSS se acepta por
+   escrito, y es menor hoy porque la app no carga nada de fuera ni tiene terceros.
+2. **Sin servidor no hay recuperación de contraseña.** El "olvidé mi contraseña" no
+   existe porque no hay con quién verificarse. La pantalla de primer arranque lo dice
+   en voz alta («Apúntala: no hay *olvidé mi contraseña*»). Es una limitación real y la
+   solución del diseño son las **passkeys** (§1.1), que llegan en F6: mientras tanto,
+   perder la contraseña es perder el acceso a la app local. La base no se pierde, pero
+   hay que volver a crear la cuenta.
+3. **Un usuario inactivo cierra sus sesiones abiertas.** `verificarSesion()` une `users`
+   con `is_activo` y `deleted_at`, así que desactivar a alguien no deja vivo lo que ya
+   estaba abierto. Y cuando el usuario no existe, la comprobación **verifica igual un
+   hash señuelo** antes de contestar que no: así «usuario que no existe» y «contraseña
+   equivocada» cuestan lo mismo y la pantalla no se convierte en un buscador de usuarios.
+
+**Lo que queda pendiente aquí, dicho y no escondido:** la rotación de refresh tokens y la
+detección de reuso (§2.2); el PIN y la pantalla de step-up (F6); el limitador de intentos
+persistente (hoy hay el `retrasoTrasFallos()` puro más una espera creciente en la propia
+pantalla — suficiente para el mostrador, no para internet). Nada de esto bloquea el uso
+diario; todo esto está en F6.
+
 ## 3. Cookies, CSRF y por qué `localStorage` es una trampa
 
 ```ts

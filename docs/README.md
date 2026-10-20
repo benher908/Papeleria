@@ -2,9 +2,11 @@
 
 Documentación de diseño. Un solo desarrollador, un solo usuario (el dueño), crece después sin rehacer nada.
 
-> **Estado:** el diseño está completo. El **núcleo ya está escrito y probado** en
-> [`packages/core`](../packages/core) — 68 pruebas sobre dinero, códigos de barras,
-> precios y totales de venta (`pnpm test`). Todo lo demás es diseño todavía.
+> **Estado:** el diseño está completo. Además del núcleo, ya están escritos el esquema y
+> las migraciones ([`packages/db`](../packages/db)), la base local en el navegador y su
+> entrada ([`apps/web`](../apps/web)). `pnpm test` corre **300 pruebas** sobre dinero,
+> códigos de barras, precios, totales, migraciones, la transacción que ata cada cambio a
+> su evento, las políticas de autorización y el login local.
 > **Cómo arrancar:** [`README.md`](../README.md) de la raíz.
 
 ---

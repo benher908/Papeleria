@@ -19,6 +19,7 @@ src/
   contadores.ts             device_seq, HLC y folio local: sin huecos y sin repetir
   eventos.ts                emitirEvento(): estado + evento + auditoría en una transacción
   autorizacion.ts           carga permisos, políticas y step-up, y llama a evaluar()
+  auth.ts                   argon2id, dispositivos y sesiones: crear cuenta, entrar, verificar, salir
 ```
 
 ## Uso
@@ -137,6 +138,37 @@ datos. `autorizar(tx, entrada)` hace, dentro de la transacción del evento:
 | Un permiso sensible pide autorización aunque no tenga regla | `config:editar` (`es_sensible`) devuelve `step_up`; `dispositivos:revocar` (P22) no |
 | Un contexto incompleto es un error, no un agujero | `autorizar()` con una venta sin `descuento_pct` lanza nombrándolo |
 
+## `auth.ts`: entrar sin servidor
+
+La app tiene que **vender sin internet**, así que la autenticación no puede depender de
+ninguna red: la cuenta, el dispositivo y las sesiones son filas de la misma base local, y
+aquí está lo que las escribe. El porqué completo, en
+[docs/07 §2.4](../docs/07-sesiones-y-seguridad.md).
+
+```ts
+import { crearUsuario, entrar, verificarSesion, cerrarSesion, registrarDispositivo } from '@papeleria/db';
+
+// Primer arranque: se crea la cuenta Y se abre la sesión en la misma transacción.
+await crearUsuario(tx, { username: 'duena', nombre: 'Benedicta', contrasena, prohibidas });
+const resultado = await entrar(tx, { username: 'duena', contrasena, dispositivoId, contexto: 'caja' });
+// resultado.ok ? resultado.sesion.token  → se guarda (hoy en localStorage, F4 cookie httpOnly)
+```
+
+| Propiedad | Cómo se fija |
+|---|---|
+| El hash es **argon2id** con los parámetros del doc (§1.2: 19 MiB, t=2, p=1) | Un vector dorado: una contraseña, una sal y un PHC de referencia, comprobados en `auth.test.ts` |
+| El **mismo PHC en el navegador y en Node** | Se usa `hash-wasm` (WASM puro, misma salida). Así el servidor de F4 verificará los hashes que ya existen, sin migrar nada |
+| El token **no** se guarda en claro | A `sessions` va su SHA-256; el token sale en la respuesta y sólo vive en el cliente |
+| Un usuario desconocido cuesta lo mismo que una contraseña mala | Se verifica un **hash señuelo** cuando el usuario no existe: la pantalla no sirve para averiguar quién está dado de alta |
+| Una cuenta inactiva cierra lo que ya estaba abierto | `verificarSesion()` une `users` con `is_activo` y `deleted_at IS NULL` |
+| El vencimiento es el de su fila, no el que le pasen | `siguienteVencimientoPorInactividad()` lee la ventana de la **sesión**, para que nadie pueda estirar de 15 a 30 minutos un bloqueo de administración pasando un contexto equivocado |
+| La contraseña se juzga **antes** de hashear | `revisarContrasena()` (@papeleria/core) rechaza cortas, repetidas, la escalera `123456789012` o una fila entera del teclado, y las palabras prohibidas: `ErrorContrasenaDebil` con la lista de problemas |
+
+Lo que **no** trae, a propósito: rotación de refresh tokens, PIN y step-up (F6), un índice
+único sobre `refresh_token_hash` (con un puñado de filas, un recorrido secuencial es más
+rápido) y limitador de intentos persistente (hoy, el `retrasoTrasFallos()` puro más una
+espera creciente en la pantalla). Está dicho en `docs/07 §2.4` y en `docs/10`.
+
 ## Lo que el runner garantiza
 
 | Garantía | Por qué importa |
@@ -167,8 +199,8 @@ docker rm -f papeleria-pruebas-pg
 > la que se conecta. Con el puerto cambiado, es imposible que le pegue al de verdad.
 
 Sin `DATABASE_URL_PRUEBAS` las dos pruebas que necesitan el motor real se **saltan**
-(aparecen como `skipped`); el resto corre igual contra PGlite. Son 90 pruebas contra
-PostgreSQL y 88 + 2 saltadas con sólo PGlite.
+(aparecen como `skipped`); el resto corre igual contra PGlite. Son **122 pruebas con el
+PostgreSQL real** y **120 + 2 saltadas con sólo PGlite**.
 
 El test levanta un PGlite limpio, aplica las migraciones, hace lo mismo en el
 Postgres, y compara los dos catálogos línea a línea (tablas, columnas con su tipo

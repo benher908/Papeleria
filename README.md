@@ -15,12 +15,13 @@ celular. También es el punto de venta.
 | Parte | Estado |
 |---|---|
 | Diseño completo (12 documentos) | ✅ terminado — [`docs/`](docs/README.md) |
-| Núcleo: dinero, códigos de barras, precios, totales, autorización | ✅ **escrito y con 154 pruebas en verde** |
+| Núcleo: dinero, códigos de barras, precios, totales, autorización, contraseñas | ✅ **escrito y con 178 pruebas en verde** |
 | Probador de cámara y códigos (`tools/prueba-camara`) | ✅ **listo — falta probarlo en tu celular** |
-| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 88 pruebas en verde** — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
+| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 122 pruebas en verde** — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
 | Motor de ventas: `emitirEvento()` + `outbox` | ✅ **estado, evento y auditoría en una sola transacción** — ni una venta a medias, ni un folio gastado |
 | Autorización: `evaluar()` + las 30 reglas sembradas | ✅ **la tabla de casos del doc 06 §9 en verde, contra las reglas reales** |
 | Base local en el navegador (`apps/web`) | ✅ **funcionando** — PGlite en un Web Worker, verificado con **dos pestañas abiertas** |
+| Entrada: crear la cuenta y entrar (`0.7`) | ✅ **funcionando sin servidor** — la sesión persiste al recargar, el `logout` funciona, y verificado en un navegador real |
 | API, interfaz de producto | ⬜ no empezado (el diseño está listo) |
 
 Lo que ya funciona hoy, en `packages/core`: aritmética de dinero en centavos
@@ -41,12 +42,16 @@ número de ticket quemado que deje la sincronización atascada. Está verificado
 el fallo a propósito, y el panel lo deja ver: pulsa *Vender y fallar a mitad* y compara
 la cuenta antes y después.
 
-Y en `apps/web`: **la base local ya vive en el navegador**. Un Postgres entero
-(WASM) dentro de un Web Worker, con una sola instancia por navegador elegida entre
-pestañas, aplicando las mismas migraciones que el servidor. `pnpm web dev` y ábrela
-en dos pestañas: el panel te dice cuál es la dueña, comprueba que dos pestañas
-escribiendo a la vez no pierden ni una fila, y te deja vender una venta de prueba y
-romperla a mitad para ver que no queda nada a medias.
+Y en `apps/web`: **la base local ya vive en el navegador y tiene entrada**. Un Postgres
+entero (WASM) dentro de un Web Worker, con una sola instancia por navegador elegida entre
+pestañas, aplicando las mismas migraciones que el servidor. La primera vez la app pide
+**crear la cuenta de la dueña** —no hay servidor del que traerla— y después se entra con
+contraseña: al recargar no la vuelve a pedir mientras la sesión siga viva, y deja de valer
+cuando toca (30 min sin usarla, 12 h en total). Todo eso sin internet y sin que la
+contraseña salga del equipo. `pnpm web dev` y ábrela en dos pestañas: el panel —al que sólo
+se llega con la sesión iniciada— te dice cuál es la dueña de la base, comprueba que dos
+pestañas escribiendo a la vez no pierden ni una fila, y te deja vender una venta de prueba
+y romperla a mitad para ver que no queda nada a medias.
 
 ---
 
@@ -115,12 +120,14 @@ Papeleria/
 ├── packages/
 │   ├── core/                    ⭐ el núcleo: sin dependencias de plataforma
 │   │   ├── src/dinero.ts        centavos, redondeo, IVA, formato, parseo
+│   │   ├── src/auth/            reglas de contraseña y tiempos de sesión (puras)
 │   │   ├── src/codigos-barras/ean13.ts
 │   │   ├── src/precios/calcularPrecio.ts
 │   │   └── src/ventas/totales.ts
 │   └── db/                      el esquema: un solo .sql para los dos motores
 │       ├── migrations/          0001_init · 0002_rbac_abac · 0003_seed_catalogos
-│       └── src/runner.ts        aplica las migraciones y detecta divergencias
+│       │                        0004_eventos · 0005_politicas
+│       └── src/                 runner · eventos · autorizacion · auth
 │
 ├── tools/
 │   └── prueba-camara/           probador de la tarea 0.9 (se puede borrar cuando ya no haga falta)
@@ -129,7 +136,9 @@ Papeleria/
 │       └── public/                    la página de diagnóstico
 │
 ├── apps/
-│   └── web/                     la app del navegador (por ahora, la capa de datos)
+│   └── web/                     la app del navegador
+│       ├── src/app.ts                arranque: capas, base, sesión reanudada o entrada
+│       ├── src/auth/                 la entrada: crear la cuenta o entrar, y dónde se guarda el token
 │       ├── src/db/pglite.worker.ts   el Web Worker dueño de la base
 │       ├── src/db/baseLocal.ts       el cliente tipado (consultar, ejecutar, transacción)
 │       ├── src/db/migraciones.ts     los .sql de packages/db, incrustados por Vite
@@ -179,7 +188,7 @@ herramienta) en [`docs/11 §1`](docs/11-despliegue-gratuito.md) y
 
 ### 2. Base de datos: esquema y migraciones — ✅ hecho
 
-`packages/db` ya tiene las migraciones `0001`–`0005` y 88 pruebas en verde. El
+`packages/db` ya tiene las migraciones `0001`–`0005` y 122 pruebas en verde. El
 esquema está descrito en `docs/02` y `docs/06`, y la regla que lo sostiene todo es
 una: **el mismo archivo .sql corre en PGlite (el navegador) y en PostgreSQL 16 (el
 servidor)**. No es una aspiración: hay una prueba que aplica las migraciones a los
@@ -221,8 +230,17 @@ Lo que sigue, en orden ([`docs/10`](docs/10-roadmap.md), fase F0):
   permisos**. De paso: el lado derecho de una comparación puede ser otro campo (sin eso
   la regla P1 no se puede escribir), y un contexto incompleto **lanza** en vez de dejar
   una regla apagada en silencio.
+- **0.7 — Login mínimo.** ✅ **Hecho y verificado en un navegador real.** El primer
+  arranque crea la cuenta de la dueña (no hay servidor del que traerla) y a partir de ahí
+  se entra con contraseña. Recargar **no** vuelve a pedirla mientras la sesión siga viva;
+  vencer (30 min inactivo / 12 h) devuelve a la entrada con el motivo; `Salir` revoca la
+  sesión y recuerda el dispositivo. En la base sólo queda el Argon2id y el SHA-256 del
+  token. **La cookie `httpOnly` no se hizo a propósito**: la pone un servidor y todavía no
+  hay servidor, así que el token vive en `localStorage` como apaño temporal y marcado como
+  tal; `apps/api` (F4) lo sustituye. Sin servidor tampoco hay «olvidé mi contraseña» —lo
+  resuelven las passkeys de F6, y la pantalla lo avisa. Ver [`docs/07 §2.4`](docs/07-sesiones-y-seguridad.md).
 
-Lo que sigue es la prueba de cámara (0.9), el login (0.7) y el lector HID (0.8).
+Lo que sigue es la prueba de cámara (0.9) y el lector HID (0.8).
 
 ### 3. La caja (POS) primero, el inventario después
 

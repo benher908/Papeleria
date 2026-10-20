@@ -3,9 +3,13 @@
 La base local del sistema: **PGlite** (Postgres real en WebAssembly) dentro del
 navegador, con una sola instancia por origen, funcionando sin internet.
 
-Por ahora esta app es **la capa de datos y su panel de diagnóstico**. La interfaz de
-producto (POS, escaneo, etiquetas) llega después; está deliberadamente separada en
-`src/diagnostico/` para no mezclarla con `src/db/`.
+Por ahora esta app es **la capa de datos, su entrada y su panel de diagnóstico**. La
+interfaz de producto (POS, escaneo, etiquetas) llega después; está deliberadamente
+separada en `src/diagnostico/` para no mezclarla con `src/db/`.
+
+Al abrir por primera vez, la app pide **crear la cuenta de la dueña** (no hay servidor
+del que traerla) y después ya sólo pide la contraseña cuando la sesión de verdad venció.
+Detalle abajo, en [La entrada](#la-entrada-el-login-local-que-no-depende-de-un-servidor).
 
 ```powershell
 pnpm web dev          # levanta la app en http://localhost:5173
@@ -133,6 +137,53 @@ sincronización se quedaría atascada en ese punto.
 
 ---
 
+## La entrada: el login local, que no depende de un servidor
+
+El requisito que manda aquí es **vender sin internet**. Un bloqueo de sesión que necesitara
+preguntarle a un servidor dejaría el PC inservible justo el día que se cae el router, así
+que la autenticación vive **en la misma base local**: la cuenta, el dispositivo y las
+sesiones son filas de PGlite, y la comprobación de la contraseña se hace contra el hash
+guardado en el navegador. Ver el porqué completo en
+[docs/07 §2.4](../docs/07-sesiones-y-seguridad.md).
+
+```text
+Primer arranque  →  se crea la cuenta de la dueña (nombre, usuario, contraseña)
+Entrar           →  en cualquier arranque posterior
+Dentro           →  barra «Benedicta · caja C1 · Salir» y, debajo, el panel
+```
+
+El criterio de la tarea 0.7, y cómo se comprueba:
+
+| Criterio | Cómo se fija |
+|---|---|
+| Entras con la contraseña correcta | `entrar()` verifica con Argon2id y abre una fila en `sessions` |
+| La sesión **persiste** al recargar | Se guarda el token y, al volver, `verificarSesion()` lo acepta: **no vuelve a pedir la contraseña** |
+| Deja de valer cuando debe | Vencida (30 min inactivo / 12 h absoluto) la fila se revoca; al volver a la pestaña se comprueba y se vuelve a la entrada **con el motivo** |
+| `logout` funciona | `Salir` revoca la sesión en la base, olvida el token y **recuerda el dispositivo** (`C1`), que no hay que volver a crear |
+| Una contraseña mala no entra ni deja rastro | No se crea ninguna fila en `sessions`, el campo se limpia y el usuario no existe / la contraseña no cuadra dan **el mismo mensaje** |
+
+**La contraseña sólo está en pantalla, nunca en la base.** Lo que se guarda es el
+resultado de Argon2id, y del token de sesión se guarda **su SHA-256**: comprobado en la
+base real, el token en claro no aparece por ninguna parte (`count = 0`).
+
+### Lo que no se hace todavía, y se dice
+
+- **El token vive en `localStorage`, que [docs/07 §3](../docs/07-sesiones-y-seguridad.md)
+  llama una trampa, y lo es.** Una cookie `httpOnly` la pone un servidor; no hay servidor
+  todavía, y el navegador no puede escribir su propia cookie protegida. Es un **apaño con
+  fecha de caducidad** (F4, cuando exista `apps/api`), y está marcado así en
+  `src/auth/almacen.ts`.
+- **Sin servidor no hay «olvidé mi contraseña».** No hay con quién verificarse. La
+  pantalla de primer arranque lo avisa. El remedio del diseño son las **passkeys**
+  (F6); hasta entonces, perder la contraseña es volver a crear la cuenta. La base no se
+  pierde, pero el acceso sí.
+- **Nada de rotación de refresh tokens, ni PIN, ni step-up.** Eso es F6. Lo que sí queda
+  es lo que protege el mostrador hoy: el bloqueo por inactividad, el tope absoluto de 12 h,
+  una espera creciente tras varios intentos fallidos y la comprobación con tiempo constante
+  (un hash señuelo cuando el usuario no existe) para no delatar quién está dado de alta.
+
+---
+
 ## Rendimiento: la decisión que más se nota
 
 PGlite, por defecto, **espera el volcado a IndexedDB después de cada consulta**. Medido
@@ -149,19 +200,40 @@ que cobra al instante.
 `relaxedDurability` significa que la consulta puede volver **antes** de que el cambio
 esté en disco. Si el navegador muere de golpe en esos milisegundos, se pierden las
 últimas escrituras. La decisión, entonces, no es «¿durabilidad sí o no?», sino **dónde se
-paga**:
+paga**: `relaxedDurability: true` para todo lo interactivo, y `sincronizar()` —que es
+`syncToFs()`— después de una escritura que no se puede perder.
 
-- `relaxedDurability: true` para todo lo interactivo.
-- `sincronizar()` — que es `syncToFs()`, fuerza el volcado **y espera** — en los
-  momentos en que el dato tiene que estar a salvo: **al cerrar una venta**, al emitir un
-  evento del `outbox`, al cerrar caja.
+#### ⚠️ Lo que `sincronizar()` **no** hace, y por qué está escrito aquí
 
-Así no hay ninguna escritura importante que quede sin confirmar, y no se paga el precio
-en cada pulsación de tecla.
+Leído en la fuente de PGlite al escribir la tarea 0.7, `syncToFs()` hace esto:
 
-> Si algún día alguien prefiere durabilidad total a velocidad, es cambiar una línea en
-> `src/db/pglite.worker.ts`. Pero conviene volver a medir antes: 3 transacciones por
-> segundo hace inservible el POS.
+```js
+async syncToFs() {
+  if (this.#syncing) return;                              // ← si ya hay uno, lo DESCARTA
+  this.#syncing = true;
+  const volcar = async () => { /* … */ };
+  this.#relaxedDurability ? volcar() : await volcar();    // ← en modo relajado NO espera
+}
+```
+
+Dos consecuencias, y ninguna es lo que este README decía antes:
+
+1. **No espera.** En modo relajado lanza el volcado y vuelve. `await sincronizar()` no
+   significa «ya está en disco»: significa «ya se pidió».
+2. **Se puede descartar.** Si ya hay un volcado en marcha, la petición nueva se ignora.
+   El siguiente volcado la recupera, pero no en el momento.
+
+O sea: `sincronizar()` **reduce** la ventana en la que un `COMMIT` confirmado todavía no
+está en IndexedDB, pero **no la cierra**. Lo vimos en un navegador real: sin el volcado,
+crear la cuenta y recargar devolvía la pantalla de entrada; con el volcado, deja de pasar.
+
+**Es deuda, y es del sistema entero, no del login.** Le pasa igual a una venta cobrada: el
+`COMMIT` puede estar confirmado y no en disco durante esos milisegundos. El remedio es una
+línea en `src/db/pglite.worker.ts` (`relaxedDurability: false`), que devuelve `syncToFs()`
+a «volcar y esperar» de verdad — a cambio del ritmo de 3/s de la tabla de arriba. Antes de
+decidirlo hay que **volver a medir con el POS real**: 3 transacciones por segundo puede
+hacer inservible el cobro, y una ventana de milisegundos puede ser irrelevante frente a
+que se corte la luz justo ahí. Lo que no se hace es dejarlo apuntado al revés.
 
 ---
 
@@ -169,11 +241,16 @@ en cada pulsación de tecla.
 
 | Archivo | Qué es |
 |---|---|
+| `src/main.ts` | Cuatro líneas: montar la app en el `#app` del HTML. |
+| `src/app.ts` | El arranque: comprueba las capas, abre la base, **reanuda la sesión** si la hay y deja al usuario dentro o en la entrada. Al volver a la pestaña, revisa que la sesión siga viva. |
+| `src/auth/pantalla.ts` | La entrada: primer arranque (crear la cuenta) o login. No hashea ni compara nada; llama a `@papeleria/db` y muestra lo que le contesten. |
+| `src/auth/almacen.ts` | El token y el dispositivo en `localStorage`. El comentario de arriba explica por qué es un **apaño temporal** hasta la cookie `httpOnly` de F4. |
+| `src/ui.ts` | Los ayudantes de interfaz compartidos (`crear`, `mensaje`, `esperar`, `aviso`, `capasQueFaltan`). |
 | `src/db/pglite.worker.ts` | El obrero que **es dueño** de la base. Sólo lo ejecuta la pestaña líder; ahí corren las migraciones, una sola vez por origen. |
 | `src/db/baseLocal.ts` | El cliente tipado. Nadie más toca PGlite: la app usa `consultar`, `ejecutar`, `enTransaccion`, `sincronizar`. |
-| `src/db/cliente.ts` | Traduce ese cliente al contrato `query`/`exec`/`transaction` que espera `@papeleria/db`. |
+| `src/db/cliente.ts` | Traduce ese cliente al contrato `query`/`exec`/`transaction` que espera `@papeleria/db`, y expone `enTransaccionDuradera()`: la transacción **más** el volcado, para las escrituras que no se pueden perder (ver *Lo que `sincronizar()` no hace*, más arriba). |
 | `src/db/migraciones.ts` | Los `.sql` de `packages/db` incrustados en el bundle por Vite. |
-| `src/diagnostico/` | El panel: capas, migraciones, semillas, la prueba de dos pestañas y la de la transacción. |
+| `src/diagnostico/` | El panel: capas, migraciones, semillas, la prueba de dos pestañas y la de la transacción. Es una herramienta de desarrollo y sólo se llega a ella **con la sesión iniciada**. |
 | `src/diagnostico/outbox.ts` | La venta de prueba de la sección 4: la emite, la revienta y borra lo que dejó. |
 | `src/estilos.css` | Estilos propios. Tailwind y shadcn/ui llegan con la interfaz de producto, no antes. |
 

@@ -235,3 +235,90 @@ td:nth-child(3) {
   color: var(--acento);
   font-size: 0.87rem;
 }
+
+/* ─────────────────────────── entrada y barra de sesión ─────────────────────────── */
+
+.barra {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 1.25rem;
+  border-bottom: 1px solid var(--linea);
+  background: var(--tarjeta);
+  font-size: 0.86rem;
+}
+
+.barra .quien {
+  font-weight: 600;
+}
+
+.barra .donde {
+  color: var(--suave);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.barra .crecer {
+  flex: 1;
+}
+
+.entrada {
+  max-width: 30rem;
+  margin: 3rem auto 4rem;
+  padding: 1.4rem 1.5rem 1.5rem;
+  background: var(--tarjeta);
+  border: 1px solid var(--linea);
+  border-radius: 0.7rem;
+}
+
+.entrada h1 {
+  margin: 0;
+  font-size: 1.3rem;
+  letter-spacing: -0.01em;
+}
+
+.entrada .descripcion {
+  margin-bottom: 1.1rem;
+}
+
+.campo {
+  display: block;
+  margin-top: 0.85rem;
+}
+
+.campo span {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--suave);
+  font-size: 0.82rem;
+}
+
+.campo input {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+  color: inherit;
+  background: var(--fondo);
+  border: 1px solid var(--linea);
+  border-radius: 0.4rem;
+}
+
+.campo input:focus {
+  outline: 2px solid var(--acento);
+  outline-offset: 1px;
+}
+
+.problemas {
+  margin: 0.6rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--aviso);
+  font-size: 0.85rem;
+}
+
+.entrada .boton {
+  width: 100%;
+  margin-top: 1.1rem;
+}
+
+.entrada .aviso {
+  margin-top: 1rem;
+}

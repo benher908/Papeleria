@@ -17,4 +17,5 @@ export * from './ids/azar';
 export * from './ids/ulid';
 export * from './ids/uuidv7';
 export * from './sync/hlc';
+export * from './auth';
 export * from './policies';

@@ -29,10 +29,23 @@ const ID_UNIDAD_PIEZA = '01900000-0000-7000-8002-000000000001';
 /** El prefijo con el que se decide que la terminal no puede chocar con otra caja. */
 const PREFIJO_TERMINAL = 'C1';
 
-/** Una autorización que permite todo: hoy no hay evaluador (tarea 0.6). */
+/**
+ * Una autorización que permite todo, declarada aquí y no exportada.
+ *
+ * El evaluador de políticas existe desde la tarea 0.6 (`@papeleria/core`) y la
+ * decisión real la pone `autorizar()`. Estos tests **no** la usan a propósito: lo
+ * que comprueban es la transacción de `emitirEvento()` (que el estado, el evento y
+ * los contadores entren juntos o no entren), y sembrar roles, permisos y políticas
+ * para eso ataría cada test de transacción a los datos de autorización. Mezclar las
+ * dos cosas haría que un cambio en las reglas rompiera tests que no son de reglas.
+ *
+ * Quien decide de verdad se prueba donde toca y contra las reglas reales:
+ * `autorizacion.test.ts` corre la tabla del doc 06 §9 contra `0002` y `0005`, y el
+ * panel del navegador vende una venta de verdad con el rol `dueno`.
+ */
 const permitirTodo = async (): Promise<DecisionAutorizacion> => ({
   permitido: true,
-  motivo: 'prueba: aún no existe el evaluador de políticas',
+  motivo: 'prueba: aquí sólo se prueba la transacción, no las reglas',
   obligaciones: [],
 });
 

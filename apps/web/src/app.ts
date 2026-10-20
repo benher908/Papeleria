@@ -17,6 +17,7 @@
  */
 
 import { cerrarSesion, hayUsuarios, verificarSesion } from '@papeleria/db';
+import type { Root } from 'react-dom/client';
 
 import { montarEntrada, type SesionIniciada } from './auth/pantalla';
 import {
@@ -27,9 +28,9 @@ import {
 } from './auth/almacen';
 import { baseLocal, type BaseLocal } from './db/baseLocal';
 import { comoClienteTransaccional, enTransaccionDuradera } from './db/cliente';
-import { montarPanel } from './diagnostico/panel';
 import { crearColaEscaneo } from './escaneo/cola';
 import { instalarLectorHid } from './escaneo/hid';
+import { montarProductos } from './productos/montar';
 import { aviso, capasQueFaltan, crear, mensaje } from './ui';
 
 export async function montarApp(raiz: HTMLElement): Promise<void> {
@@ -72,8 +73,19 @@ export async function montarApp(raiz: HTMLElement): Promise<void> {
    */
   let desinstalarHid: (() => void) | null = null;
 
+  /**
+   * La raíz de React de la zona de trabajo.
+   *
+   * Se guarda para desmontarla al salir. No es cosmético: un árbol montado sobre un nodo
+   * que ya se quitó del documento sigue vivo, con sus temporizadores y sus consultas, y
+   * además se quedaría con el callback de una sesión que ya no existe.
+   */
+  let raizReact: Root | null = null;
+
   function mostrarCaja(actual: SesionIniciada): void {
     sesion = actual;
+    raizReact?.unmount();
+    raizReact = null;
     raiz.replaceChildren();
 
     desinstalarHid?.();
@@ -91,11 +103,13 @@ export async function montarApp(raiz: HTMLElement): Promise<void> {
 
     const contenedor = crear('div');
     raiz.append(contenedor);
-    void montarPanel(contenedor, cola);
+    raizReact = montarProductos(contenedor, { base, sesion: actual, cola });
   }
 
   function mostrarEntrada(nota?: string): void {
     sesion = null;
+    raizReact?.unmount();
+    raizReact = null;
     desinstalarHid?.();
     desinstalarHid = null;
     montarEntrada(raiz, base, {

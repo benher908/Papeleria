@@ -217,6 +217,8 @@ export async function crearUsuario(
   if (problemas.length > 0) throw new ErrorContrasenaDebil(problemas);
 
   const id = uuidV7();
+  const primero = !(await hayUsuarios(cliente));
+
   try {
     await cliente.query(
       `INSERT INTO users (id, username, nombre, password_hash) VALUES ($1, $2, $3, $4)`,
@@ -226,7 +228,57 @@ export async function crearUsuario(
     if (esViolacionDeUnicidad(error)) throw new ErrorUsuarioYaExiste(username);
     throw error;
   }
+
+  // La primera cuenta es la dueña, y eso no es un detalle de la pantalla: sin rol no
+  // hay permisos, y sin permisos la dueña no podría ni dar de alta un producto. La
+  // pantalla de primer arranque ya lo dice («la de la dueña»); esto lo hace verdad.
+  //
+  // Las cuentas siguientes NO heredan el rol: un empleado se crea con `asignarRol()`
+  // y sólo con lo que le toque. Por eso la comprobación es «¿es el primero?» y no un
+  // valor por defecto del parámetro, que se olvidaría en la siguiente llamada.
+  if (primero) {
+    const rol = await cliente.query<{ id: string }>(
+      `INSERT INTO user_roles (user_id, role_id)
+       SELECT $1, id FROM roles WHERE clave = 'dueno'
+       RETURNING role_id AS id`,
+      [id],
+    );
+    if (rol.rows.length !== 1) {
+      throw new Error('Falta el rol «dueno»: la base no está sembrada como debería.');
+    }
+  }
+
   return id;
+}
+
+/**
+ * Le da un rol a un usuario. Idempotente: asignar dos veces el mismo rol no falla.
+ *
+ * Se exporta porque la pantalla de usuarios (F6) lo va a necesitar y porque es la
+ * forma de probar que un rol sin permiso de verdad cierra la puerta.
+ */
+export async function asignarRol(
+  cliente: ClienteSql,
+  usuarioId: string,
+  claveRol: string,
+  asignadoPor?: string,
+): Promise<void> {
+  const { rows } = await cliente.query<{ id: string }>(
+    `INSERT INTO user_roles (user_id, role_id, asignado_por)
+     SELECT $1, id, $3 FROM roles WHERE clave = $2
+     ON CONFLICT (user_id, role_id) DO NOTHING
+     RETURNING role_id AS id`,
+    [usuarioId, claveRol, asignadoPor ?? null],
+  );
+
+  if (rows.length === 0) {
+    // O el rol no existe, o ya estaba. Se distinguen para no tragarse un dedazo.
+    const existe = await cliente.query<{ id: string }>(
+      `SELECT id FROM roles WHERE clave = $1`,
+      [claveRol],
+    );
+    if (existe.rows.length === 0) throw new Error(`No existe el rol «${claveRol}».`);
+  }
 }
 
 // ─────────────────────────── dispositivos ───────────────────────────

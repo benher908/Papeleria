@@ -48,6 +48,35 @@ pnpm dev
 > **`http://localhost` es contexto seguro** → la cámara funciona en la PC.
 > **`https://localhost`** o `http://localhost` en **el celular** apunta al celular, no a tu PC. Para usar la cámara del celular **necesitas HTTPS**, sin excepción ([04 §2](04-escaneo-movil.md#2-el-gotcha-que-hace-fracasar-el-80-de-estos-proyectos)).
 
+### Entregarla en el PC de la dueña (sin `pnpm`, sin Docker, sin internet)
+
+La app se compila a archivos estáticos y se **instala como PWA**. El servidor no guarda
+datos: **la base nace en el navegador de ese PC**, en ese origen. La del PC de desarrollo
+no viaja con la app.
+
+```powershell
+pnpm web build     # genera apps/web/dist
+pnpm web preview   # lo sirve en http://localhost:4173, para probarlo tal cual
+```
+
+Ese `dist` se publica en **un origen HTTPS fijo**: para probar, `vite preview`; para
+entregarla, cualquier hosting estático gratuito (Cloudflare Pages, Netlify) o el mismo
+Caddy de un VPS. En el PC de la dueña: abrir la URL una vez, esperar a que el service
+worker termine de guardar (~20 MB, una sola vez) e instalar desde la barra de direcciones
+(Chrome/Edge) o *Añadir a pantalla de inicio* (celular).
+
+Reglas que no se pueden romper al entregarla:
+
+- **Un solo origen estable.** Cambiar de dominio o de puerto es otra base, vacía.
+- No borrar «datos del sitio», no usar incógnito, no cambiar de navegador o de perfil.
+- **La cámara y el service worker exigen HTTPS** también con la PWA ya instalada.
+- **Instalarla en el celular no comparte los datos del PC**: son dos bases. La
+  sincronización es F4.
+- **Todavía no hay respaldo automático.** Antes del primer día real tiene que existir un
+  botón de «exportar la base» a un archivo (y subirlo a Google Drive con el respaldo de
+  la [§6](#6-respaldos-gratis-lo-único-no-negociable)). Es el pendiente más caro de dejar
+  abierto: sin él, un disco muerto es el inventario entero.
+
 ## 3. Receta B — Celular con cámara, gratis y en LAN (`mkcert`)
 
 La forma de tener HTTPS **sin internet** y sin pagar nada.

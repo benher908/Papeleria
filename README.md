@@ -17,13 +17,15 @@ celular. También es el punto de venta.
 | Diseño completo (12 documentos) | ✅ terminado — [`docs/`](docs/README.md) |
 | Núcleo: dinero, códigos de barras, precios, totales, autorización, contraseñas | ✅ **escrito y con 195 pruebas en verde** |
 | Probador de cámara y códigos (`tools/prueba-camara`) | ✅ **listo — falta probarlo en tu celular** |
-| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 129 pruebas en verde** (131 con PostgreSQL 16) — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
+| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 148 pruebas en verde** (150 con PostgreSQL 16) — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
 | Motor de ventas: `emitirEvento()` + `outbox` | ✅ **estado, evento y auditoría en una sola transacción** — ni una venta a medias, ni un folio gastado |
 | Autorización: `evaluar()` + las 30 reglas sembradas | ✅ **la tabla de casos del doc 06 §9 en verde, contra las reglas reales** |
 | Base local en el navegador (`apps/web`) | ✅ **funcionando** — PGlite en un Web Worker, verificado con **dos pestañas abiertas** |
 | Entrada: crear la cuenta y entrar (`0.7`) | ✅ **funcionando sin servidor** — la sesión persiste al recargar, el `logout` funciona, y verificado en un navegador real |
 | Lector de códigos de barras HID (`0.8`) | ✅ **funcionando** — un lector de $25 se presenta como teclado; el panel lo simula y distingue a una persona de una máquina |
-| API, interfaz de producto | ⬜ no empezado (el diseño está listo) |
+| App instalable y sin internet (`0.10`) | ✅ **PWA**: se instala como app y abre con el servidor apagado — verificado en un navegador real |
+| Catálogo de productos (`1.1`) | 🟨 **en curso** — alta, listado con búsqueda y edición funcionan de punta a punta; faltan categorías, unidades y proveedores |
+| POS, etiquetas, API | ⬜ no empezado (el diseño está listo) |
 
 Lo que ya funciona hoy, en `packages/core`: aritmética de dinero en centavos
 (`bigint`, sin errores de punto flotante), dígito verificador EAN-13, generación
@@ -87,7 +89,8 @@ pnpm db typecheck         # tipos solo de la base de datos
 
 pnpm web dev              # levanta la app en http://localhost:5173 (ábrela en 2 pestañas)
 pnpm web test             # pruebas de la app: que el bundle vea las mismas migraciones
-pnpm web build            # build de producción
+pnpm web build            # build de producción (genera apps/web/dist, con su service worker)
+pnpm web preview          # sirve ese build en http://localhost:4173 — así se prueba el modo sin red
 pnpm web typecheck        # tipos solo de la app
 
 pnpm certificado          # ⚠️ PRIMERO: crea el certificado para probar la cámara del celular
@@ -191,7 +194,7 @@ herramienta) en [`docs/11 §1`](docs/11-despliegue-gratuito.md) y
 
 ### 2. Base de datos: esquema y migraciones — ✅ hecho
 
-`packages/db` ya tiene las migraciones `0001`–`0006` y 129 pruebas en verde. El
+`packages/db` ya tiene las migraciones `0001`–`0006` y 148 pruebas en verde. El
 esquema está descrito en `docs/02` y `docs/06`, y la regla que lo sostiene todo es
 una: **el mismo archivo .sql corre en PGlite (el navegador) y en PostgreSQL 16 (el
 servidor)**. No es una aspiración: hay una prueba que aplica las migraciones a los
@@ -250,6 +253,18 @@ Lo que sigue, en orden ([`docs/10`](docs/10-roadmap.md), fase F0):
   Enter del lector** —para que no envíe el formulario abierto— y publica en la **cola de
   escaneo**, el mismo punto por el que entrará el celular. Se prueba sin lector en la
   sección 5 del panel: simula un escaneo rápido y uno humano lento, y el lento no dispara.
+- **0.10 — App instalable y sin internet (PWA).** ✅ **Hecho y verificado en un navegador
+  real.** El service worker se genera en cada build con la lista exacta de archivos del
+  bundle y precarga **todo**, incluidos los 17 MB del motor de base de datos. Con el
+  servidor apagado la app abrió, reanudó la sesión y los productos siguieron en la lista.
+  Instalarla **no** exime de HTTPS, y los datos viven en el navegador y el origen de ese
+  PC: borrar «datos del sitio» borra la papelería. El respaldo automático es F4 y es el
+  pendiente que más importa antes de entregarla. Ver
+  [`docs/11 §2`](docs/11-despliegue-gratuito.md) y [`apps/web/README.md`](apps/web/README.md).
+- **1.1 — Catálogo de productos.** 🟨 **En curso y usable**: dar de alta, buscar y editar
+  funciona de punta a punta en un navegador real, con la autorización **dentro** de la
+  transacción (un precio por debajo del costo se rechaza con la política P1). Faltan los
+  CRUD de categorías, unidades y proveedores.
 
 Sólo queda la prueba de cámara (0.9), que necesita tu celular.
 
@@ -267,7 +282,9 @@ que escribe ventas (`docs/01 §4` y `docs/04`).
 ### 5. Despliegue
 
 `docs/11-despliegue-gratuito.md` para probar sin pagar; `docs/09` para el
-montaje definitivo.
+montaje definitivo. La app se entrega **compilada** (`pnpm web build`) a un
+origen HTTPS fijo y se instala como PWA en el PC de la tienda: ahí nace su base
+de datos. La del PC donde se programa no viaja con la app.
 
 ---
 

@@ -164,6 +164,7 @@ const resultado = await entrar(tx, { username: 'duena', contrasena, dispositivoI
 | Un usuario desconocido cuesta lo mismo que una contraseña mala | Se verifica un **hash señuelo** cuando el usuario no existe: la pantalla no sirve para averiguar quién está dado de alta |
 | Una cuenta inactiva cierra lo que ya estaba abierto | `verificarSesion()` une `users` con `is_activo` y `deleted_at IS NULL` |
 | El vencimiento es el de su fila, no el que le pasen | `siguienteVencimientoPorInactividad()` lee la ventana de la **sesión**, para que nadie pueda estirar de 15 a 30 minutos un bloqueo de administración pasando un contexto equivocado |
+| El **primer** usuario queda con el rol `dueno` | `crearUsuario()` mira si había cuentas **antes** de insertar y le asigna el rol dentro de la misma transacción; a los siguientes se les da con `asignarRol()`. Sin esto, la dueña entraba pero **no podía autorizar nada**: lo destapó el primer alta de producto real, no las pruebas |
 | La contraseña se juzga **antes** de hashear | `revisarContrasena()` (@papeleria/core) rechaza cortas, repetidas, la escalera `123456789012` o una fila entera del teclado, y las palabras prohibidas: `ErrorContrasenaDebil` con la lista de problemas |
 
 Lo que **no** trae, a propósito: rotación de refresh tokens, PIN y step-up (F6), un índice
@@ -205,6 +206,45 @@ Tres cosas que importan:
 que todos validan, además de que un prefijo inexistente falla con un mensaje que dice de
 dónde sale la fila, y que una transacción revertida no gasta el número.
 
+## `productos.ts`: el catálogo
+
+El alta y la edición del producto, con la autorización **dentro** de la transacción del
+evento. Es la primera pieza de negocio real, y donde se juntan las tres anteriores:
+`emitirEvento()`, `autorizar()` y `generarCodigoInterno()`.
+
+```ts
+import { crearProducto, actualizarProducto, listarProductos, listarCategorias } from '@papeleria/db';
+
+// `datos` no lleva un `autorizar` suelto: la autorización es parte de la operación, y
+// corre dentro de la transacción del evento. Lo único que hay que pasarle es quién y
+// desde qué dispositivo.
+await crearProducto(cliente, {
+  nombre: 'Cuaderno profesional 100 hojas',
+  unitId,                          // obligatorio
+  precioMinor: 4500n,              // centavos, IVA incluido, > 0
+  costoMinor: 2800n,
+  categoryId,
+  codigos: ['2000000000015'],      // opcional: si falta, se reserva uno interno
+}, {
+  usuarioId: sesion.usuario.id,
+  dispositivoId: sesion.dispositivo.id,
+});
+
+const filas = await listarProductos(cliente, 'lap');   // nombre, SKU o código
+```
+
+| Decisión | Por qué |
+|---|---|
+| Pedir un precio **por debajo del costo** pide un permiso **extra** | `productos:crear`/`productos:editar` no bastan: si el precio es ≤ 0 o menor al costo se exige además `precios:editar` con `recurso.tipo = 'precio'`, y ahí es donde la política **P1/P2** dice que no. Se probó en el navegador: el alta se rechaza con «El precio nuevo queda por debajo del costo: vender así pierde dinero. Ni con autorización» |
+| El código interno se reserva **dentro** de la transacción | Ver `secuencias.ts`: si el producto no entra, el número no se gasta |
+| Un código repetido se explica, no se filtra | `uq_barcode` es global; el error se traduce a un mensaje que dice **de qué producto** es el código que ya existe, en vez de dejar salir un `23505` |
+| La lista y la búsqueda son **la misma consulta** | `listarProductos(cliente, filtro)` trae categoría, unidad, stock y el código primario en **una sola** consulta, y con un `filtro` busca por nombre, SKU y código. Hoy usa `ILIKE` a propósito: con 20 productos es instantáneo y encuentra «lap» dentro de «Lápiz»; el full-text llega en F1.6, cuando haya miles |
+
+`productos.test.ts` cubre las dos caras de cada regla: que el estado y el evento entran
+**juntos** (si el evento falla, no queda producto), que el precio normal pasa y el
+precio-bajo-costo no, que el código se reserva o se respeta el que le des, que un código
+ajeno se rechaza nombrando al dueño, y que la edición también deja su evento.
+
 ## Lo que el runner garantiza
 
 | Garantía | Por qué importa |
@@ -235,8 +275,8 @@ docker rm -f papeleria-pruebas-pg
 > la que se conecta. Con el puerto cambiado, es imposible que le pegue al de verdad.
 
 Sin `DATABASE_URL_PRUEBAS` las dos pruebas que necesitan el motor real se **saltan**
-(aparecen como `skipped`); el resto corre igual contra PGlite. Son **131 pruebas con el
-PostgreSQL real** y **129 + 2 saltadas con sólo PGlite**.
+(aparecen como `skipped`); el resto corre igual contra PGlite. Son **150 pruebas con el
+PostgreSQL real** y **148 + 2 saltadas con sólo PGlite**.
 
 El test levanta un PGlite limpio, aplica las migraciones, hace lo mismo en el
 Postgres, y compara los dos catálogos línea a línea (tablas, columnas con su tipo

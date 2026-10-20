@@ -71,9 +71,11 @@ gantt
 | 0.7 | Login mínimo (contraseña argon2id + cookie httpOnly) | Entras, la sesión persiste, `logout` funciona | ✅ **Hecho y verificado en un navegador real.** El primer arranque crea la cuenta de la dueña (no hay servidor del que traerla) y a partir de ahí se entra con contraseña. Entrar, recargar y seguir dentro **sin volver a pedir la contraseña**: comprobado. Salir revoca la sesión en la base y recuerda el dispositivo (`C1`). Vencer la sesión (30 min inactivo / 12 h) devuelve a la entrada **con el motivo**. En la base sólo queda el **Argon2id** y el **SHA-256** del token: el token en claro no aparece. Y con una contraseña mala no se crea **ninguna** fila en `sessions`. **La cookie `httpOnly` no se hizo a propósito**: la pone un servidor y no hay servidor todavía, así que el token vive en `localStorage` como apaño temporal y **marcado como tal**; el `apps/api` de F4 lo sustituye. Con la misma honestidad: sin servidor **no hay recuperación de contraseña** (lo resuelven las passkeys de F6, y la pantalla lo avisa), y la rotación de refresh tokens, el PIN y el step-up son F6. Detalle en [docs/07 §2.4](07-sesiones-y-seguridad.md) y [`apps/web/README.md`](../apps/web/README.md) |
 | 0.8 | `useBarcodeWedge` (HID) | Un lector de $25 o un script que simule pulsaciones imprime el código en consola | ✅ **Hecho y verificado en un navegador real.** Un lector USB o Bluetooth se presenta como **teclado**: no necesita driver ni SDK. La máquina que separa una ráfaga de máquina de una persona es **pura** (`packages/core/src/escaneo/lectorHid.ts`, 17 pruebas: velocidad, pausas, modificadores, códigos cortos o largos, y el mismo código dos veces), y el adaptador al DOM (`apps/web/src/escaneo/hid.ts`) escucha en **captura**, consume el Enter del lector —para que no envíe el formulario abierto— y publica en la **cola de escaneo** (`apps/web/src/escaneo/cola.ts`), que es el único punto por el que entrará también el celular (F5). El panel tiene una sección 5 que se prueba **sin lector**: simula un escaneo a 10 ms/carácter y otro a 250; el lento **no** dispara. **Sin antirrebote a propósito**: escanear dos veces el mismo código son dos piezas; el antirrebote de 800 ms es de la cámara |
 | 0.9 | **Prueba de riesgo: cámara en el celular** | Un `<video>` que lea un EAN-13 con `BarcodeDetector` **en HTTPS** | 🟡 **herramienta lista** — falta probarla en tu celular |
+| 0.10 | **PWA instalable y offline** (adelantada) | Se instala desde el navegador y abre con el servidor apagado | ✅ **Hecho y verificado en Chromium con el servidor detenido.** Manifiesto + íconos + un service worker propio que en el build precarga **el build entero** (18 archivos, incluidos los 17 MB de PGlite) y sirve caché primero. Con el servidor apagado la app abrió, reanudó la sesión y el producto siguió en la lista, sin errores en consola. El aviso de versión nueva es manual a propósito: una recarga a media venta es una venta perdida. Apareció un detalle que parece menor y no lo es: el servidor manda `Vary: Origin` y el `<script type="module">` va con `Origin`, así que la caché «tenía» los archivos pero la comparación decía que no; se resuelve con `ignoreVary`. **Ojo al entregarla:** los datos viven en el IndexedDB de ese navegador y ese origen; borrar datos del sitio borra la papelería, y todavía **no hay respaldo automático** (F4) |
 
 > **Lo que queda de F0:** sólo 0.9 (la prueba de cámara, que es la de riesgo, y necesita tu
-> celular). 0.2, 0.3, 0.4, 0.5, 0.6, 0.7 y 0.8 ya están hechas.
+> celular). 0.1–0.8 y 0.10 ya están hechas. La 0.10 se adelantó porque el requisito es
+> entregarla a otra persona y que funcione sin internet.
 
 ### La tarea 0.9 es la más importante de esta fase
 
@@ -110,7 +112,8 @@ que pediste. Media hora de trabajo que te ahorra semanas.
 
 - ❌ Diseño bonito. Tailwind con lo mínimo.
 - ❌ Vistas de reportes.
-- ❌ Empaquetado o PWA instalable.
+- ❌ Empaquetado nativo (APK/IPA). La PWA cubre instalar y trabajar sin red; no hay tienda
+  de apps de por medio.
 - ❌ Optimizaciones.
 
 ---
@@ -133,15 +136,22 @@ que pediste. Media hora de trabajo que te ahorra semanas.
 | 1.10 | Importación desde Excel/CSV | Subes tu lista actual de productos de una vez |
 | 1.11 | **`outbox` + HLC** desde el primer día | Los eventos se generan con `device_seq` y `hlc` correctos |
 
-**Hecho hasta ahora:** **1.2** (desde F0.2: `digitoVerificadorEAN13`, `validaEAN13`,
-prefijo interno `2`, Code 128 y códigos de ubicación), **1.3** (`0006_secuencias.sql` +
-`packages/db/src/secuencias.ts`): la secuencia se reserva con un `UPDATE ... RETURNING`
-atómico dentro de la transacción del producto, y **1 000 códigos seguidos salen únicos y
-con el verificador correcto**, contra PGlite y contra PostgreSQL 16; y **1.4** en el
-esquema (`uq_barcode` es **global**: un código pertenece a un solo producto, y un producto
-puede tener varios —el de fábrica y el interno—, con pruebas de las dos cosas). El
-mensaje amable al chocar un código va con el formulario de producto (1.1). El resto de F1
-depende de la interfaz de producto (1.1 y de ahí en adelante).
+**Hecho hasta ahora:** **1.1 en curso** — la capa de datos y la pantalla de producto
+(alta, listado con búsqueda y edición) están hechas y probadas contra PGlite y PostgreSQL;
+faltan los CRUD de categorías, unidades y proveedores. Al dar de alta el primer producto
+en un navegador real apareció un fallo que las pruebas de la pantalla no podían ver: el
+primer usuario se creaba **sin rol**, así que la dueña no podía autorizar nada y el alta
+fallaba con «El rol no incluye productos:crear». `crearUsuario()` ahora le asigna `dueno`
+—sólo al primero— y hay `asignarRol()` para los siguientes. **1.2** (desde F0.2:
+`digitoVerificadorEAN13`, `validaEAN13`, prefijo interno `2`, Code 128 y códigos de
+ubicación), **1.3** (`0006_secuencias.sql` + `packages/db/src/secuencias.ts`): la secuencia
+se reserva con un `UPDATE ... RETURNING` atómico dentro de la transacción del producto, y
+**1 000 códigos seguidos salen únicos y con el verificador correcto**, contra PGlite y
+contra PostgreSQL 16; y **1.4** en el esquema (`uq_barcode` es **global**: un código
+pertenece a un solo producto, y un producto puede tener varios —el de fábrica y el
+interno—, con pruebas de las dos cosas). El mensaje amable al chocar un código va con el
+formulario de producto (1.1). El resto de F1 depende de la interfaz de producto (1.1 y de
+ahí en adelante).
 
 ### El hito real de F1
 
@@ -417,11 +427,12 @@ Si de todo el documento solo puedes ejecutar tres cosas:
 2. **Compra el UPS ($50) y el lector HID ($25).** El UPS protege lo que ya tienes; el lector va a hacer que el sistema sea agradable desde el primer día.
 3. **Exporta tu inventario actual a CSV y cuéntalo.** Saber si son 800 o 4 500 SKU cambia el plan de carga y las estimaciones.
 
-Y después: **F0, tarea por tarea** — 0.9 (la cámara) y luego 0.8.
+Y después: **la tarea 0.9** (la cámara), que es la única de F0 que falta.
 
-> 0.2, 0.3, 0.4, 0.5, 0.6, 0.7 y 0.8 ya están hechas: `pnpm test` corre **326 pruebas** sobre
+> 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 y 0.10 ya están hechas: `pnpm test` corre **345 pruebas** sobre
 > dinero, EAN-13, precios, totales, ULID, UUID v7, reloj lógico, migraciones, esquema,
-> la transacción que ata cada cambio del negocio a su evento, las 10 políticas del
-> doc 06 §9 contra las reglas sembradas, el login local (contraseña, sesión y
-> vencimiento), el lector HID y los códigos internos (1 000 sin repetir). Corre
-> `pnpm test` una vez y verás el punto de partida.
+> la transacción que ata cada cambio del negocio a su evento, las políticas del
+> doc 06 §9 contra las reglas sembradas, el login local (contraseña, sesión, rol de la
+> primera cuenta y vencimiento), el lector HID, los códigos internos (1 000 sin repetir)
+> y el catálogo de productos (alta, búsqueda y edición). Corre `pnpm test` una vez y verás
+> el punto de partida.

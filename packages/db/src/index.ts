@@ -28,6 +28,7 @@ export * from './esquema';
 export * from './adaptadores';
 export * from './contadores';
 export * from './secuencias';
+export * from './productos';
 export * from './eventos';
 export * from './autorizacion';
 export * from './auth';

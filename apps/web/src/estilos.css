@@ -1,3 +1,19 @@
+/**
+ * Hoja única de la app. Los dos mundos conviven a propósito:
+ *
+ *  · Las variables y los componentes de la entrada/sesión están escritos a mano y ya
+ *    verificados en el navegador.
+ *  · Tailwind sostiene las pantallas nuevas de React, después de esas reglas para que
+ *    una utilidad gane cuando se cruza con una clase suelta.
+ *
+ * No se importa el `preflight` de Tailwind: esta hoja ya tiene su propio reinicio
+ * mínimo (`box-sizing`, márgenes del body) y el preflight le movería el suelo a la
+ * pantalla de entrada, que está probada tal como se ve.
+ */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
 :root {
   color-scheme: light dark;
 

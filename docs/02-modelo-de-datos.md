@@ -647,8 +647,8 @@ packages/db/migrations/
   0007_precios.sql            -- PENDIENTE: margin_rules + precio_fijo/margen_override (doc 12)
 ```
 
-**Estado:** `0001`–`0006` implementadas y probadas (`packages/db`, 131 pruebas en verde,
-129 de ellas sin necesidad de un motor externo). Los números no salieron como este plan: al
+**Estado:** `0001`–`0006` implementadas y probadas (`packages/db`, 150 pruebas en verde,
+148 de ellas sin necesidad de un motor externo). Los números no salieron como este plan: al
 llegar la fase F0 entraron antes los **eventos** (`0004`, doc 08) y las **políticas**
 (`0005`, doc 06) que las vistas de reportes o la búsqueda full-text, que siguen pendientes.
 El generador de códigos internos (`0006`) se adelantó a los precios porque F1 lo necesita

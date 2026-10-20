@@ -6,6 +6,7 @@ import { adaptarPglite } from './adaptadores';
 import { cargarMigraciones } from './archivos';
 import {
   aBase64Url,
+  asignarRol,
   cerrarSesion,
   cerrarSesionesDeUsuario,
   crearSesion,
@@ -169,6 +170,55 @@ describe('usuarios', () => {
     expect(await hayUsuarios(cliente)).toBe(false);
     await montar();
     expect(await hayUsuarios(cliente)).toBe(true);
+  });
+
+  test('el primer usuario queda con el rol de dueño', async () => {
+    // Sin rol no hay permisos, y sin permisos la dueña no puede ni dar de alta un
+    // producto. Esto se descubrió con la primera autorización real de F1.1.
+    const { usuarioId } = await montar();
+
+    const { rows } = await cliente.query<{ clave: string }>(
+      `SELECT r.clave FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1`,
+      [usuarioId],
+    );
+    expect(rows.map((fila) => fila.clave)).toEqual(['dueno']);
+  });
+
+  test('el segundo usuario no hereda el rol de dueño', async () => {
+    await montar('duena');
+    const segundo = await crearUsuario(cliente, {
+      username: 'empleado',
+      nombre: 'Empleado',
+      contrasena: CONTRASENA,
+      prohibidas: ['papeleria'],
+    });
+
+    const { rows } = await cliente.query(
+      `SELECT 1 FROM user_roles WHERE user_id = $1`,
+      [segundo],
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  test('asignarRol da el rol pedido, es idempotente y avisa si no existe', async () => {
+    const { usuarioId } = await montar('duena');
+    const segundo = await crearUsuario(cliente, {
+      username: 'cajero',
+      nombre: 'Cajero',
+      contrasena: CONTRASENA,
+      prohibidas: ['papeleria'],
+    });
+
+    await asignarRol(cliente, segundo, 'cajero');
+    await asignarRol(cliente, segundo, 'cajero');
+
+    const { rows } = await cliente.query<{ clave: string }>(
+      `SELECT r.clave FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1`,
+      [segundo],
+    );
+    expect(rows.map((fila) => fila.clave)).toEqual(['cajero']);
+
+    await expect(asignarRol(cliente, usuarioId, 'inventado')).rejects.toThrow(/«inventado»/);
   });
 
   test('el nombre de usuario se guarda normalizado', async () => {

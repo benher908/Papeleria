@@ -3,9 +3,11 @@
 La base local del sistema: **PGlite** (Postgres real en WebAssembly) dentro del
 navegador, con una sola instancia por origen, funcionando sin internet.
 
-Por ahora esta app es **la capa de datos, su entrada y su panel de diagnóstico**. La
-interfaz de producto (POS, escaneo, etiquetas) llega después; está deliberadamente
-separada en `src/diagnostico/` para no mezclarla con `src/db/`.
+Es una **PWA instalable**: se abre como app desde el escritorio o el celular y sigue
+funcionando sin red (ver [La app instalable](#la-app-instalable-pwa)). Hoy tiene la
+entrada, el **catálogo de productos** (alta, listado y edición, F1.1) y el panel de
+diagnóstico. El POS, el escaneo y las etiquetas llegan después; el diagnóstico vive
+aparte en `src/diagnostico/` para no mezclarlo con la interfaz de negocio.
 
 Al abrir por primera vez, la app pide **crear la cuenta de la dueña** (no hay servidor
 del que traerla) y después ya sólo pide la contraseña cuando la sesión de verdad venció.
@@ -184,6 +186,79 @@ base real, el token en claro no aparece por ninguna parte (`count = 0`).
 
 ---
 
+## La app instalable (PWA)
+
+El requisito no es «una web que se pueda abrir», es **la app de la papelería en la
+computadora de la papelería, sin depender de internet**. Eso son tres piezas:
+
+| Pieza | Archivo | Qué hace |
+|---|---|---|
+| Manifiesto | `public/manifest.webmanifest` | nombre, íconos, colores y `display: standalone`, que es lo que permite instalarla |
+| Service worker | `sw/plantilla.js` → `dist/sw.js` | guarda **todo** el build y responde sin red |
+| Aviso de versión | `src/pwa.ts` | cuando entra una versión nueva, avisa y **no recarga sola** |
+
+El service worker no se escribe a mano en `dist`: es una plantilla que `vite.config.ts`
+compila en cada build con la **lista exacta de archivos** (incluidos
+`pglite.wasm` y `pglite.data`, ~17 MB) y una versión que cambia cuando cambia algo.
+Así la instalación deja la app completa en caché desde la primera visita, en vez de
+depender de que la dueña entre dos veces antes de irse sin internet.
+
+### Cómo se comporta
+
+- **Abrir la app**: primero la caché. No espera a la red, porque es una caja.
+- **Archivos**: caché primero; si falta, red y se guarda. Cada nombre lleva el hash de
+  su contenido, así que un archivo cacheado nunca queda viejo.
+- **Sin red**: abre, entra con la sesión guardada y la base local sigue ahí.
+- **Versión nueva**: el navegador instala la nueva en segundo plano y aparece abajo
+  «Hay una versión nueva de la app · Recargar». **No se recarga sola**: una recarga a
+  media venta es una venta perdida.
+
+El `ignoreVary` del service worker no es un descuido: el servidor manda
+`Vary: Origin` y los `<script type="module">` van con `Origin`, mientras que la
+descarga de la instalación no la lleva. Sin eso, la caché «tiene» el archivo pero la
+comparación dice que no y la app se cae a la red justo cuando no hay red. Es seguro
+ignorarla porque cada archivo lleva su hash en el nombre.
+
+### Probarlo como lo va a vivir la dueña
+
+El service worker **sólo se registra en producción** (en desarrollo se comería el HMR):
+
+```powershell
+pnpm web build
+pnpm web preview -- --port 4173
+```
+
+1. Abre `http://localhost:4173` y espera unos segundos (la primera vez descarga ~20 MB).
+2. Comprueba en DevTools → *Application* → *Service Workers* que está **activated**.
+3. **Para el servidor** (`Ctrl+C`) y recarga: la app tiene que abrir igual, con los
+   productos y la sesión.
+4. Instálala: icono de instalar en la barra de direcciones (Chrome/Edge), menú →
+   *Instalar app* (Android) o *Compartir* → *Añadir a pantalla de inicio* (iOS).
+
+Comprobado en Chromium con el servidor apagado: 18 archivos en caché, la app abrió, la
+sesión se reanudó y el producto siguió en la lista. Sin errores en consola.
+
+### ⚠️ Dónde viven los datos (esto importa al entregarla)
+
+La base **no viaja con la app**. Vive en el `IndexedDB` de ese navegador, en ese
+origen, en esa computadora. Consecuencias, dichas sin adornos:
+
+- Instalarla en el celular **no** comparte los datos del PC: es otra base vacía. La
+  sincronización entre dispositivos es F4.
+- **Borrar «datos del sitio» borra la papelería entera.** Igual que usar una ventana de
+  incógnito o cambiar de navegador/perfil: son orígenes distintos.
+- Cambiar de puerto cambia el origen. `localhost:5173` y `localhost:4173` son dos bases
+  distintas; por eso el servidor de producción debe quedarse en **un solo origen fijo**.
+- **No hay respaldo automático todavía.** Si se muere el disco del PC, se pierde todo.
+  Hasta F4 hay que exportar la base a un archivo de vez en cuando; está en la lista de
+  pendientes antes de entregar. No es un detalle: es la diferencia entre un susto y
+  perder el inventario.
+
+Instalar la app **no** exime de HTTPS: `getUserMedia`, `crypto.subtle` y los service
+workers lo exigen igual (docs/04 §2).
+
+---
+
 ## Rendimiento: la decisión que más se nota
 
 PGlite, por defecto, **espera el volcado a IndexedDB después de cada consulta**. Medido
@@ -287,7 +362,7 @@ Si la simulación llamara a la cola directamente no probaría nada de eso.
 
 | Archivo | Qué es |
 |---|---|
-| `src/main.ts` | Cuatro líneas: montar la app en el `#app` del HTML. |
+| `src/main.ts` | Monta la app en el `#app` del HTML y registra el service worker (sólo en producción). |
 | `src/app.ts` | El arranque: comprueba las capas, abre la base, **reanuda la sesión** si la hay y deja al usuario dentro o en la entrada. Al volver a la pestaña, revisa que la sesión siga viva. |
 | `src/auth/pantalla.ts` | La entrada: primer arranque (crear la cuenta) o login. No hashea ni compara nada; llama a `@papeleria/db` y muestra lo que le contesten. |
 | `src/auth/almacen.ts` | El token y el dispositivo en `localStorage`. El comentario de arriba explica por qué es un **apaño temporal** hasta la cookie `httpOnly` de F4. |
@@ -300,7 +375,12 @@ Si la simulación llamara a la cola directamente no probaría nada de eso.
 | `src/db/migraciones.ts` | Los `.sql` de `packages/db` incrustados en el bundle por Vite. |
 | `src/diagnostico/` | El panel: capas, migraciones, semillas, la prueba de dos pestañas y la de la transacción. Es una herramienta de desarrollo y sólo se llega a ella **con la sesión iniciada**. |
 | `src/diagnostico/outbox.ts` | La venta de prueba de la sección 4: la emite, la revienta y borra lo que dejó. |
-| `src/estilos.css` | Estilos propios. Tailwind y shadcn/ui llegan con la interfaz de producto, no antes. |
+| `src/productos/` | La pantalla de catálogo (F1.1): lista con búsqueda, alta y edición. `App.tsx` monta React dentro de la sesión; `Formulario.tsx` y `Lista.tsx` son las dos vistas. |
+| `src/componentes/ui.tsx` | Los componentes base, al estilo shadcn/ui pero escritos a mano: botón, campo, entrada, selección, tarjeta y aviso. Sin Radix mientras no haya diálogos. |
+| `src/pwa.ts` | Registra el service worker y muestra el aviso de versión nueva. |
+| `sw/plantilla.js` | El service worker: precarga el build entero y sirve caché primero. `vite.config.ts` le inyecta la lista de archivos y la versión. |
+| `public/manifest.webmanifest` + `public/icons/` | Lo que hace instalable a la app y cómo se ve el ícono. |
+| `src/estilos.css` | Los estilos que ya existían (entrada y sesión) + Tailwind para las pantallas nuevas. No se importa el `preflight` de Tailwind para no moverle el suelo a la entrada. |
 
 ### Las migraciones: un solo origen para dos caminos
 
@@ -337,8 +417,9 @@ internet**:
 | `pglite.data` | 6,2 MB |
 | worker + app | ~1,7 MB |
 
-Son ~17 MB **la primera vez**. Después queda en caché (y el service worker lo pre-cachea
-cuando llegue la PWA). Es el precio de tener un Postgres entero que no depende de la red.
+Son ~17 MB **la primera vez**. El service worker los precarga durante la instalación y
+después se sirven de la caché, sin red. Es el precio de tener un Postgres entero que no
+depende de la red.
 
 ---
 

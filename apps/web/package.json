@@ -14,6 +14,7 @@
     "@electric-sql/pglite": "^0.5.10",
     "@papeleria/core": "workspace:*",
     "@papeleria/db": "workspace:*",
+    "bwip-js": "^4.11.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

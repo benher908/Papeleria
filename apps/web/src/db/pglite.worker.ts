@@ -33,6 +33,14 @@ worker({
     const db = await PGlite.create({
       dataDir,
 
+      // Restauración: el archivo llega desde `PGliteWorker.create({ loadDataDir })`.
+      // Sin reenviarlo aquí, PGlite abriría un directorio vacío y la pantalla diría
+      // que restauró bien mientras la papelería desaparece. Se descubrió probando
+      // la restauración de punta a punta, no en las pruebas unitarias.
+      ...(opciones.loadDataDir === undefined
+        ? {}
+        : { loadDataDir: opciones.loadDataDir as Blob | File }),
+
       // ── Por qué se renuncia a la durabilidad por defecto ─────────────────────
       // Sin esto, PGlite **espera el volcado a IndexedDB después de cada consulta**.
       // Medido en este equipo con una transacción de 4 sentencias:

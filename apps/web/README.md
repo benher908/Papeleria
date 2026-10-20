@@ -250,10 +250,14 @@ origen, en esa computadora. Consecuencias, dichas sin adornos:
   incógnito o cambiar de navegador/perfil: son orígenes distintos.
 - Cambiar de puerto cambia el origen. `localhost:5173` y `localhost:4173` son dos bases
   distintas; por eso el servidor de producción debe quedarse en **un solo origen fijo**.
-- **No hay respaldo automático todavía.** Si se muere el disco del PC, se pierde todo.
-  Hasta F4 hay que exportar la base a un archivo de vez en cuando; está en la lista de
-  pendientes antes de entregar. No es un detalle: es la diferencia entre un susto y
-  perder el inventario.
+- **Hay respaldo manual, pero no automático.** La pestaña **Respaldo** descarga un
+  `.tgz` con la base entera (esquema, productos, ventas, usuarios y hashes) y permite
+  restaurarlo. Antes de reemplazar nada guarda un volcado de seguridad. Aun así, si se
+  muere el disco del PC y el respaldo estaba en el mismo disco, se pierde todo: hay que
+  copiarlo a otro lado. El respaldo automático es F4.
+- **Restaurar cierra la sesión y recarga la app.** El archivo contiene el hash de la
+  contraseña y las sesiones; trátalo como las llaves del negocio. Si el archivo está
+  dañado, la app vuelve a abrir la base anterior: no se queda a medias.
 
 Instalar la app **no** exime de HTTPS: `getUserMedia`, `crypto.subtle` y los service
 workers lo exigen igual (docs/04 §2).
@@ -369,11 +373,14 @@ carrito a medio armar y el turno abierto no se pierden por mirar el catálogo.
    que ya estaba ahí).
 2. **Escanear** con el lector HID o **buscar** por nombre o código. Escanear dos veces el
    mismo código suma dos piezas. `F2` enfoca el buscador; `F1` cobra; `Escape` vuelve.
-3. **Cobrar**: efectivo (con denominaciones y cambio sugerido), tarjeta o transferencia.
-   El cambio se calcula con lo recibido; el ticket muestra subtotal, IVA incluido y total.
+3. **Cobrar**: efectivo (con denominaciones y cambio sugerido), tarjeta, transferencia o
+   vale. Se pueden combinar varios métodos en la misma venta; el efectivo es la única
+   fuente de cambio. El ticket muestra subtotal, IVA incluido y total.
 4. **Cerrar turno**: el sistema calcula el esperado (`fondo + efectivo − cambio −
    retiros − gastos + ingresos + devoluciones`), se teclea lo contado y, si la diferencia
    pasa de $50, la nota es obligatoria. Al cerrar queda el **corte Z** listo para imprimir.
+   El mismo panel lista las ventas del turno y permite **cancelar** una con motivo y
+   contraseña; el stock vuelve y el arqueo se recalcula.
 
 El esperado **nunca** se toma de la pantalla: se vuelve a calcular dentro de la
 transacción de cierre. Así, una pestaña vieja o un retiro recién registrado no pueden
@@ -384,12 +391,12 @@ mercancía (F3), así que el primer producto vendido queda en negativo. No es un
 la venta: es el ledger diciendo la verdad de que nunca se registró la entrada. En la
 pantalla de productos el stock se ve en negativo hasta que F3 exista.
 
-Lo que el POS **todavía no** hace, y se nota: favoritos y venta libre (2.9), devoluciones
-y cancelación con interfaz (2.10; la capa de datos ya las tiene), pago mixto en la
-pantalla y el PIN de step-up (F6). Sin PIN, las políticas que lo piden —descuento de más
-del 10 %, venta de más de $5 000, venta de más de $1 000 después de las 20:00— se
-rechazan con un mensaje claro en vez de pedir autorización. Está a propósito: es mejor
-que la regla se cumpla de más a que se apague sin que nadie lo note.
+Lo que el POS **todavía no** hace, y se nota: descuentos desde la pantalla, devolución
+parcial (hoy se cancela la venta completa), historial de ventas con reimpresión, reportes,
+límite de intentos del step-up y el PIN/passkeys de F6. El step-up ya funciona con la
+**contraseña de la cuenta** para las políticas que lo piden —descuento de más del 10 %,
+venta de más de $5 000, venta de más de $1 000 después de las 20:00, retiro de más de
+$500 y cancelación— y el otorgamiento dura cinco minutos y está acotado al permiso.
 
 ---
 
@@ -410,8 +417,10 @@ que la regla se cumpla de más a que se apague sin que nadie lo note.
 | `src/db/migraciones.ts` | Los `.sql` de `packages/db` incrustados en el bundle por Vite. |
 | `src/diagnostico/` | El panel: capas, migraciones, semillas, la prueba de dos pestañas y la de la transacción. Es una herramienta de desarrollo y sólo se llega a ella **con la sesión iniciada**. |
 | `src/diagnostico/outbox.ts` | La venta de prueba de la sección 4: la emite, la revienta y borra lo que dejó. |
-| `src/productos/` | El catálogo (F1.1): lista con búsqueda, alta y edición. `Formulario.tsx` y `Lista.tsx` son las dos vistas; `App.tsx` es el armazón de pestañas que monta el POS, el catálogo y el diagnóstico. |
-| `src/pos/PantallaVenta.tsx` | El POS (F2): turno, buscador/escáner, carrito, cobro, arqueo, movimientos de cajón y corte Z. Se monta oculto al cambiar de pestaña para no perder el carrito. |
+| `src/productos/` | El catálogo (F1.1): lista con búsqueda, alta y edición. `Formulario.tsx` y `Lista.tsx` son las dos vistas; `App.tsx` es el armazón de pestañas que monta el POS, el catálogo, las etiquetas, el respaldo y el diagnóstico. |
+| `src/etiquetas/PantallaEtiquetas.tsx` | Etiquetas (F1.7–F1.9): hoja A4 con EAN-13, calibración guardada en `localStorage` y hoja de prueba. Imprime en un iframe con su propio `@page` para no mezclarse con el ticket de 58 mm. |
+| `src/respaldo/PantallaRespaldo.tsx` | Respaldo manual: descarga el volcado `.tgz` y lo restaura, con un volcado de seguridad antes de reemplazar. |
+| `src/pos/PantallaVenta.tsx` | El POS (F2): turno, buscador/escáner, carrito, cobro —también mixto—, arqueo, movimientos de cajón, corte Z y cancelación con motivo. Se monta oculto al cambiar de pestaña para no perder el carrito. |
 | `src/pos/Ticket.tsx` | El ticket de 58 mm y el corte Z, más el CSS de impresión que oculta el resto de la app al llamar a `window.print()`. |
 | `src/componentes/ui.tsx` | Los componentes base, al estilo shadcn/ui pero escritos a mano: botón, campo, entrada, selección, tarjeta y aviso. Sin Radix mientras no haya diálogos. |
 | `src/pwa.ts` | Registra el service worker y muestra el aviso de versión nueva. |

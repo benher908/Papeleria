@@ -465,15 +465,18 @@ Pantalla `/<span>etiquetas</span>`:
 
 ## 9. Checklist de este módulo
 
-- [ ] `digitoVerificadorEAN13` con tests contra valores conocidos (incluido el prefijo 20–29)
-- [ ] `validaEAN13` usado al capturar códigos a mano
+- [x] `digitoVerificadorEAN13` con tests contra valores conocidos (incluido el prefijo 20–29)
+- [x] `validaEAN13` usado al capturar códigos a mano
 - [x] Generador interno con `barcode_sequences` + `UPDATE ... RETURNING` (atómico)
-- [ ] `UNIQUE (codigo)` global en `product_barcodes` (red de seguridad contra duplicados)
-- [ ] Soporte de **múltiples códigos por producto** (fábrica, interno, paquete, caja)
-- [ ] `shelf_labels` con variantes para la pantalla de selección rápida
-- [ ] Render con `bwip-js` a ≥300 dpi con **zona de silencio**
-- [ ] Herramienta de **calibración** con offsets por impresora
-- [ ] **Impresión de prueba** obligatoria antes del lote
+- [x] `UNIQUE (codigo)` global en `product_barcodes` (red de seguridad contra duplicados)
+- [x] Soporte de **múltiples códigos por producto** (fábrica, interno, paquete, caja)
+- [ ] `shelf_labels` con variantes para la pantalla de selección rápida — **la etiqueta
+      Code 128 ya se imprime; falta que escanearla abra la selección del anaquel**
+- [x] Render con `bwip-js` con **zona de silencio** — SVG, no mapa de bits; la prueba
+      física de lectura sigue pendiente
+- [x] Herramienta de **calibración** con offsets por impresora — tamaños, márgenes,
+      columnas, filas y separación guardados en `localStorage`
+- [x] **Impresión de prueba** de una sola etiqueta antes del lote
 - [ ] Registro de `precio_impreso_minor` + reporte de **etiquetas desactualizadas**
 - [ ] Reimpresión selectiva sin crear códigos nuevos
 - [ ] Validación práctica: el código más largo se lee 5 de 5 con el lector real

@@ -36,13 +36,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   abrirTurno,
   buscarProductoPorCodigo,
+  cancelarVenta,
   cerrarTurno,
   ErrorCaja,
   ErrorNoAutorizado,
   ErrorProducto,
   ErrorVenta,
+  ID_VENTA_LIBRE,
   listarProductos,
   movimientosDelTurno,
+  productosMasVendidos,
   registrarMovimientoCaja,
   registrarVenta,
   resumenTurno,
@@ -55,10 +58,12 @@ import {
   type Turno,
   type VentaRegistrada,
   type CierreDeTurno,
+  ventasDelTurno,
 } from '@papeleria/db';
 import { cambioSugerido, ErrorDinero, porCantidad } from '@papeleria/core';
 
 import type { SesionIniciada } from '../auth/pantalla';
+import { DialogoStepUp } from '../componentes/StepUp';
 import { Aviso, Boton, Entrada, Seleccion, Tarjeta, cx } from '../componentes/ui';
 import type { BaseLocal } from '../db/baseLocal';
 import { comoClienteTransaccional } from '../db/cliente';
@@ -81,9 +86,25 @@ interface LineaCarrito {
   /** Milésimas: 1 pieza = 1000. */
   readonly qty: number;
   readonly stock: string;
+  /** Venta libre: manda descripción y precio propios y no mueve inventario. */
+  readonly esLibre: boolean;
 }
 
 type Vista = 'venta' | 'cobro' | 'ticket';
+
+interface SolicitudStepUp {
+  readonly permiso: string;
+  readonly descripcion: string;
+  readonly entidadId?: string;
+  readonly accion: () => Promise<void>;
+}
+
+interface PagoUI {
+  readonly id: number;
+  readonly metodo: MetodoPago;
+  /** Texto tal como se tecleó, para no pelear con el punto decimal. */
+  readonly monto: string;
+}
 
 const METODOS: ReadonlyArray<{ valor: MetodoPago; texto: string }> = [
   { valor: 'efectivo', texto: 'Efectivo' },
@@ -104,12 +125,24 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
   const [lineas, setLineas] = useState<readonly LineaCarrito[]>([]);
   const [busqueda, setBusqueda] = useState('');
   const [resultados, setResultados] = useState<readonly FilaProducto[]>([]);
+  const [favoritos, setFavoritos] = useState<readonly FilaProducto[]>([]);
   const [buscando, setBuscando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
 
+  const [libre, setLibre] = useState(false);
+  const [libreDescripcion, setLibreDescripcion] = useState('');
+  const [librePrecio, setLibrePrecio] = useState('');
+  const [libreCantidad, setLibreCantidad] = useState('1');
+  const [errorLibre, setErrorLibre] = useState<string | null>(null);
+
   const [vista, setVista] = useState<Vista>('venta');
-  const [metodo, setMetodo] = useState<MetodoPago>('efectivo');
-  const [recibido, setRecibido] = useState('');
+  /**
+   * Cada fila es una forma de pago. En efectivo el monto es «lo que entregó el
+   * cliente» (puede pasar del total y genera cambio); en los demás métodos es el
+   * importe exacto que se aplicó. El cambio se calcula sumando todas las filas y
+   * sólo puede salir de una fila en efectivo, igual que en `repartirCambio()`.
+   */
+  const [pagosUI, setPagosUI] = useState<readonly PagoUI[]>([]);
   const [cerrando, setCerrando] = useState(false);
   const [registrandoMov, setRegistrandoMov] = useState(false);
   const [cobrando, setCobrando] = useState(false);
@@ -119,6 +152,23 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
   const [cierre, setCierre] = useState(false);
   const [resumen, setResumen] = useState<ResumenTurno | null>(null);
   const [movimientos, setMovimientos] = useState<readonly MovimientoDeCaja[]>([]);
+  const [ventasTurno, setVentasTurno] = useState<
+    ReadonlyArray<{
+      readonly ventaId: string;
+      readonly folioLocal: string;
+      readonly totalMinor: bigint;
+      readonly estado: string;
+      readonly ocurridoAt: string;
+    }>
+  >([]);
+  const [cancelacion, setCancelacion] = useState<{
+    readonly ventaId: string;
+    readonly folioLocal: string;
+    readonly totalMinor: bigint;
+    readonly motivo: string;
+  } | null>(null);
+  const [errorCancelacion, setErrorCancelacion] = useState<string | null>(null);
+  const [cancelando, setCancelando] = useState(false);
   const [contado, setContado] = useState('');
   const [notasCierre, setNotasCierre] = useState('');
   const [errorCierre, setErrorCierre] = useState<string | null>(null);
@@ -132,6 +182,7 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
   const [movMonto, setMovMonto] = useState('');
   const [movConcepto, setMovConcepto] = useState('');
   const [errorMov, setErrorMov] = useState<string | null>(null);
+  const [stepUp, setStepUp] = useState<SolicitudStepUp | null>(null);
 
   const [negocio, setNegocio] = useState<DatosNegocio>({
     nombre: 'Papelería',
@@ -140,7 +191,8 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
   });
 
   const buscador = useRef<HTMLInputElement>(null);
-  const recibidoRef = useRef<HTMLInputElement>(null);
+  const siguientePago = useRef(1);
+  const siguienteLibre = useRef(1);
 
   const contexto = useMemo(
     () => ({ usuarioId: sesion.usuario.id, dispositivoId: sesion.dispositivo.id }),
@@ -152,8 +204,19 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
     [lineas],
   );
 
-  const recibidoMinor = intentarCentavos(recibido === '' ? '0' : recibido) ?? 0n;
-  const cambio = recibidoMinor > total ? recibidoMinor - total : 0n;
+  const pagosMinor = pagosUI.map((pago) => ({
+    ...pago,
+    montoMinor: intentarCentavos(pago.monto === '' ? '0' : pago.monto) ?? 0n,
+  }));
+  const totalPagado = pagosMinor.reduce((suma, pago) => suma + pago.montoMinor, 0n);
+  const cambio = totalPagado > total ? totalPagado - total : 0n;
+  const falta = total > totalPagado ? total - totalPagado : 0n;
+  const efectivoDisponible = pagosMinor
+    .filter((pago) => pago.metodo === 'efectivo')
+    .reduce((suma, pago) => suma + pago.montoMinor, 0n);
+  const pagadoSinEfectivo = pagosMinor
+    .filter((pago) => pago.metodo !== 'efectivo')
+    .reduce((suma, pago) => suma + pago.montoMinor, 0n);
 
   // ── turno y configuración ─────────────────────────────────────────────────
   const cargarTurno = useCallback(async () => {
@@ -169,6 +232,20 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
   useEffect(() => {
     void cargarTurno();
   }, [cargarTurno]);
+
+  const cargarFavoritos = useCallback(async () => {
+    try {
+      setFavoritos(await productosMasVendidos(comoClienteTransaccional(base), 8));
+    } catch {
+      // La tira de favoritos es una ayuda, no un requisito para vender. Si falla,
+      // el buscador y el escáner siguen funcionando.
+      setFavoritos([]);
+    }
+  }, [base]);
+
+  useEffect(() => {
+    void cargarFavoritos();
+  }, [cargarFavoritos]);
 
   useEffect(() => {
     void (async () => {
@@ -257,6 +334,21 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
         abrirCobro();
         return;
       }
+      if (evento.key === 'F4' && vista === 'venta') {
+        evento.preventDefault();
+        abrirVentaLibre();
+        return;
+      }
+      if (evento.key === 'Escape' && cancelacion !== null) {
+        evento.preventDefault();
+        setCancelacion(null);
+        return;
+      }
+      if (evento.key === 'Escape' && libre) {
+        evento.preventDefault();
+        setLibre(false);
+        return;
+      }
       if (evento.key === 'Escape' && vista === 'cobro') {
         evento.preventDefault();
         setVista('venta');
@@ -294,10 +386,55 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
           precioMinor: producto.precioMinor,
           qty: 1000,
           stock: producto.stock,
+          esLibre: false,
         },
       ];
     });
     setAviso(null);
+  }
+
+  function abrirVentaLibre(): void {
+    setErrorLibre(null);
+    setLibreDescripcion('');
+    setLibrePrecio('');
+    setLibreCantidad('1');
+    setLibre(true);
+  }
+
+  function agregarVentaLibre(): void {
+    const descripcion = libreDescripcion.trim();
+    const precio = intentarCentavos(librePrecio);
+    const cantidad = Number.parseInt(libreCantidad, 10);
+
+    if (descripcion === '') {
+      setErrorLibre('Escribe qué se vendió (copias, engargolado, impresión…).');
+      return;
+    }
+    if (precio === null || precio <= 0n) {
+      setErrorLibre('Escribe el precio, por ejemplo 2.50.');
+      return;
+    }
+    if (!Number.isInteger(cantidad) || cantidad <= 0) {
+      setErrorLibre('La cantidad tiene que ser un número entero mayor que cero.');
+      return;
+    }
+
+    setLineas((actuales) => [
+      ...actuales,
+      {
+        clave: `libre|${siguienteLibre.current++}`,
+        productoId: ID_VENTA_LIBRE,
+        presentacionId: null,
+        nombre: descripcion,
+        precioMinor: precio,
+        qty: cantidad * 1000,
+        stock: '—',
+        esLibre: true,
+      },
+    ]);
+    setLibre(false);
+    setAviso(null);
+    window.setTimeout(() => buscador.current?.focus(), 50);
   }
 
   async function agregarPorCodigo(codigo: string): Promise<void> {
@@ -413,27 +550,119 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
     }
   }
 
+  /**
+   * Si la política pidió step-up, guarda la acción para reintentarla después de
+   * que la dueña escriba su contraseña. Devuelve `true` para que el `catch` no
+   * muestre además el error como si la operación hubiera muerto.
+   */
+  function pedirAutorizacion(causa: unknown, solicitud: SolicitudStepUp): boolean {
+    if (
+      causa instanceof ErrorNoAutorizado &&
+      causa.obligaciones.includes('step_up')
+    ) {
+      setStepUp(solicitud);
+      return true;
+    }
+    return false;
+  }
+
   // ── cobro ─────────────────────────────────────────────────────────────────
   function abrirCobro(): void {
     setErrorCobro(null);
-    setMetodo('efectivo');
-    setRecibido('');
+    setPagosUI([
+      {
+        id: siguientePago.current++,
+        metodo: 'efectivo',
+        monto: pesosParaEditar(total),
+      },
+    ]);
     setVista('cobro');
-    window.setTimeout(() => recibidoRef.current?.focus(), 50);
+  }
+
+  function agregarPago(): void {
+    setPagosUI((actual) => [
+      ...actual,
+      { id: siguientePago.current++, metodo: 'tarjeta_debito', monto: '' },
+    ]);
+  }
+
+  function cambiarPago(id: number, cambios: Partial<Omit<PagoUI, 'id'>>): void {
+    setPagosUI((actual) =>
+      actual.map((pago) => (pago.id === id ? { ...pago, ...cambios } : pago)),
+    );
+  }
+
+  function quitarPago(id: number): void {
+    setPagosUI((actual) =>
+      actual.length <= 1 ? actual : actual.filter((pago) => pago.id !== id),
+    );
+  }
+
+  function indiceUltimoEfectivo(pagos: readonly PagoUI[]): number {
+    for (let indice = pagos.length - 1; indice >= 0; indice--) {
+      if (pagos[indice]?.metodo === 'efectivo') return indice;
+    }
+    return -1;
+  }
+
+  function fijarEfectivo(monto: bigint): void {
+    setPagosUI((actual) => {
+      const indice = indiceUltimoEfectivo(actual);
+      if (indice < 0) return actual;
+      return actual.map((pago, i) =>
+        i === indice ? { ...pago, monto: pesosParaEditar(monto) } : pago,
+      );
+    });
+  }
+
+  /**
+   * «Exacto» en efectivo significa «lo que falta después de las otras formas de
+   * pago», no el total: si el cliente paga $50 con tarjeta, el efectivo exacto
+   * son los $80 restantes de una cuenta de $130.
+   */
+  function fijarEfectivoExacto(): void {
+    setPagosUI((actual) => {
+      const indice = indiceUltimoEfectivo(actual);
+      if (indice < 0) return actual;
+      const otros = actual.reduce((suma, pago, i) => {
+        if (i === indice) return suma;
+        return suma + (intentarCentavos(pago.monto === '' ? '0' : pago.monto) ?? 0n);
+      }, 0n);
+      const exacto = total > otros ? total - otros : 0n;
+      return actual.map((pago, i) =>
+        i === indice ? { ...pago, monto: pesosParaEditar(exacto) } : pago,
+      );
+    });
   }
 
   async function cobrar(imprimir: boolean): Promise<void> {
     if (turno === null || turno === undefined) return;
     if (lineas.length === 0) return;
 
-    setCobrando(true);
     setErrorCobro(null);
 
-    const pagos =
-      metodo === 'efectivo'
-        ? [{ metodo, montoMinor: recibidoMinor === 0n ? total : recibidoMinor }]
-        : [{ metodo, montoMinor: total }];
+    if (totalPagado < total) {
+      setErrorCobro(`Falta cobrar ${pesos(falta)}.`);
+      return;
+    }
+    if (pagadoSinEfectivo > total) {
+      setErrorCobro('Los pagos con tarjeta o transferencia no pueden pasar del total.');
+      return;
+    }
+    if (cambio > 0n && efectivoDisponible < cambio) {
+      setErrorCobro('El cambio sólo puede salir del efectivo recibido.');
+      return;
+    }
 
+    const pagos = pagosMinor
+      .filter((pago) => pago.montoMinor > 0n)
+      .map((pago) => ({ metodo: pago.metodo, montoMinor: pago.montoMinor }));
+    if (pagos.length === 0) {
+      setErrorCobro('Escribe cuánto se pagó.');
+      return;
+    }
+
+    setCobrando(true);
     try {
       const registrada = await registrarVenta(
         comoClienteTransaccional(base),
@@ -443,6 +672,13 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
             productoId: linea.productoId,
             presentacionId: linea.presentacionId,
             qty: linea.qty,
+            ...(linea.esLibre
+              ? {
+                  descripcion: linea.nombre,
+                  precioUnitarioMinor: linea.precioMinor,
+                  esVentaLibre: true,
+                }
+              : {}),
           })),
           pagos,
         },
@@ -457,16 +693,25 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
       setVenta(registrada);
       setVista('ticket');
       setLineas([]);
-      setRecibido('');
-      setMetodo('efectivo');
+      setPagosUI([]);
       setBusqueda('');
       setResultados([]);
       setAviso(null);
+      void cargarFavoritos();
 
       if (imprimir) {
         window.setTimeout(() => window.print(), 200);
       }
     } catch (causa) {
+      if (
+        pedirAutorizacion(causa, {
+          permiso: 'ventas:crear',
+          descripcion: `Cobrar ${pesos(total)} de esta venta.`,
+          accion: () => cobrar(imprimir),
+        })
+      ) {
+        return;
+      }
       setErrorCobro(mensajeDe(causa));
     } finally {
       setCobrando(false);
@@ -489,20 +734,76 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
     setErrorMov(null);
     setResumen(null);
     setMovimientos([]);
+    setVentasTurno([]);
+    setCancelacion(null);
     try {
       const cliente = comoClienteTransaccional(base);
-      const [foto, movs] = await Promise.all([
+      const [foto, movs, ventas] = await Promise.all([
         resumenTurno(cliente, turno.id),
         movimientosDelTurno(cliente, turno.id),
+        ventasDelTurno(cliente, turno.id),
       ]);
       setResumen(foto);
       setMovimientos(movs);
+      setVentasTurno(ventas);
       setContado(pesosParaEditar(foto.esperadoEfectivoMinor));
       setNotasCierre('');
       setMovMonto('');
       setMovConcepto('');
     } catch (causa) {
       setErrorCierre(mensajeDe(causa));
+    }
+  }
+
+  async function refrescarCierre(): Promise<void> {
+    if (turno === null || turno === undefined) return;
+    const cliente = comoClienteTransaccional(base);
+    const [foto, movs, ventas] = await Promise.all([
+      resumenTurno(cliente, turno.id),
+      movimientosDelTurno(cliente, turno.id),
+      ventasDelTurno(cliente, turno.id),
+    ]);
+    setResumen(foto);
+    setMovimientos(movs);
+    setVentasTurno(ventas);
+  }
+
+  async function cancelar(): Promise<void> {
+    if (cancelacion === null || cancelando) return;
+
+    const motivo = cancelacion.motivo.trim();
+    if (motivo === '') {
+      setErrorCancelacion('Escribe por qué se cancela. No se borra nada sin explicar.');
+      return;
+    }
+
+    setErrorCancelacion(null);
+    setCancelando(true);
+    try {
+      await cancelarVenta(
+        comoClienteTransaccional(base),
+        { ventaId: cancelacion.ventaId, motivo },
+        contexto,
+      );
+      await base.sincronizar();
+      setCancelacion(null);
+      await refrescarCierre();
+    } catch (causa) {
+      if (
+        pedirAutorizacion(causa, {
+          permiso: 'ventas:cancelar',
+          descripcion: `Cancelar el ticket ${cancelacion.folioLocal} por ${pesos(
+            cancelacion.totalMinor,
+          )}.`,
+          entidadId: cancelacion.ventaId,
+          accion: cancelar,
+        })
+      ) {
+        return;
+      }
+      setErrorCancelacion(mensajeDe(causa));
+    } finally {
+      setCancelando(false);
     }
   }
 
@@ -540,6 +841,15 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
       setMovMonto('');
       setMovConcepto('');
     } catch (causa) {
+      if (
+        pedirAutorizacion(causa, {
+          permiso: 'turnos:retiros',
+          descripcion: `Registrar ${textoTipoMovimiento(movTipo).toLowerCase()} de ${pesos(monto)}.`,
+          accion: registrarMovimiento,
+        })
+      ) {
+        return;
+      }
       setErrorMov(mensajeDe(causa));
     } finally {
       setRegistrandoMov(false);
@@ -582,6 +892,15 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
       setResultadoCierre(texto);
       setVista('venta');
     } catch (causa) {
+      if (
+        pedirAutorizacion(causa, {
+          permiso: 'turnos:cerrar',
+          descripcion: `Cerrar el turno con ${pesos(monto)} contados.`,
+          accion: cerrar,
+        })
+      ) {
+        return;
+      }
       setErrorCierre(mensajeDe(causa));
     } finally {
       setCerrando(false);
@@ -647,9 +966,11 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
             onBusqueda={setBusqueda}
             onBuscar={(evento) => void alBuscar(evento)}
             resultados={resultados}
+            favoritos={favoritos}
             buscando={buscando}
             buscador={buscador}
             onAgregar={agregarFila}
+            onVentaLibre={abrirVentaLibre}
           />
 
           <Carrito
@@ -680,30 +1001,47 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
               </div>
 
               <div className="flex flex-col gap-3">
-                <label className="flex flex-col gap-1 text-xs font-medium text-[var(--suave)]">
-                  Método de pago
-                  <Seleccion
-                    value={metodo}
-                    onChange={(evento) => setMetodo(evento.target.value as MetodoPago)}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium uppercase tracking-wide text-[var(--suave)]">
+                    Formas de pago
+                  </span>
+                  <Boton
+                    variante="secundario"
+                    className="px-2.5 py-1.5 text-xs"
+                    onClick={agregarPago}
                     disabled={cobrando}
                   >
-                    {METODOS.map((opcion) => (
-                      <option key={opcion.valor} value={opcion.valor}>
-                        {opcion.texto}
-                      </option>
-                    ))}
-                  </Seleccion>
-                </label>
+                    + Agregar
+                  </Boton>
+                </div>
 
-                {metodo === 'efectivo' ? (
-                  <>
-                    <label className="flex flex-col gap-1 text-xs font-medium text-[var(--suave)]">
-                      Recibido
+                {pagosUI.map((pago, indice) => (
+                  <div key={pago.id} className="flex items-end gap-2">
+                    <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-[var(--suave)]">
+                      Método
+                      <Seleccion
+                        value={pago.metodo}
+                        onChange={(evento) =>
+                          cambiarPago(pago.id, {
+                            metodo: evento.target.value as MetodoPago,
+                          })
+                        }
+                        disabled={cobrando}
+                      >
+                        {METODOS.map((opcion) => (
+                          <option key={opcion.valor} value={opcion.valor}>
+                            {opcion.texto}
+                          </option>
+                        ))}
+                      </Seleccion>
+                    </label>
+                    <label className="flex w-32 flex-col gap-1 text-xs font-medium text-[var(--suave)]">
+                      {pago.metodo === 'efectivo' ? 'Recibido' : 'Monto'}
                       <Entrada
-                        ref={recibidoRef}
-                        value={recibido}
-                        onChange={(evento) => setRecibido(evento.target.value)}
-                        placeholder={pesosParaEditar(total)}
+                        autoFocus={indice === 0}
+                        value={pago.monto}
+                        onChange={(evento) => cambiarPago(pago.id, { monto: evento.target.value })}
+                        placeholder="0.00"
                         inputMode="decimal"
                         disabled={cobrando}
                         onKeyDown={(evento) => {
@@ -714,49 +1052,72 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
                         }}
                       />
                     </label>
+                    <Boton
+                      variante="secundario"
+                      className="px-2.5 py-2"
+                      aria-label="Quitar forma de pago"
+                      onClick={() => quitarPago(pago.id)}
+                      disabled={cobrando || pagosUI.length === 1}
+                    >
+                      ×
+                    </Boton>
+                  </div>
+                ))}
 
-                    <div className="flex flex-wrap gap-1.5">
+                <div className="rounded-md border border-[var(--linea)] bg-[var(--fondo)] p-3">
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-[var(--suave)]">Total</span>
+                    <strong className="text-base">{pesos(total)}</strong>
+                  </div>
+                  <div className="mt-1 flex items-baseline justify-between text-sm">
+                    <span className="text-[var(--suave)]">Pagado</span>
+                    <span>{pesos(totalPagado)}</span>
+                  </div>
+                  <div className="mt-1 flex items-baseline justify-between border-t border-[var(--linea)] pt-1">
+                    <span className="text-sm text-[var(--suave)]">
+                      {cambio > 0n ? 'Cambio' : 'Falta'}
+                    </span>
+                    <strong className="text-xl">
+                      {pesos(cambio > 0n ? cambio : falta)}
+                    </strong>
+                  </div>
+                  {cambio > 0n ? (
+                    <p className="mt-1 text-xs text-[var(--suave)]">
+                      {sugerenciaDeCambio(cambio)}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-[var(--suave)]">
+                      Teclea lo que entregó el cliente o pulsa una denominación.
+                    </p>
+                  )}
+                </div>
+
+                {pagosUI.some((pago) => pago.metodo === 'efectivo') ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    <Boton
+                      variante="secundario"
+                      className="px-2.5 py-1.5 text-xs"
+                      onClick={fijarEfectivoExacto}
+                      disabled={cobrando}
+                    >
+                      Exacto
+                    </Boton>
+                    {DENOMINACIONES.map((valor) => (
                       <Boton
+                        key={String(valor)}
                         variante="secundario"
                         className="px-2.5 py-1.5 text-xs"
-                        onClick={() => setRecibido(pesosParaEditar(total))}
+                        onClick={() => fijarEfectivo(valor)}
                         disabled={cobrando}
                       >
-                        Exacto
+                        {pesos(valor)}
                       </Boton>
-                      {DENOMINACIONES.map((valor) => (
-                        <Boton
-                          key={String(valor)}
-                          variante="secundario"
-                          className="px-2.5 py-1.5 text-xs"
-                          onClick={() => setRecibido(pesosParaEditar(valor))}
-                          disabled={cobrando}
-                        >
-                          {pesos(valor)}
-                        </Boton>
-                      ))}
-                    </div>
-
-                    <div className="rounded-md border border-[var(--linea)] bg-[var(--fondo)] p-3">
-                      <div className="flex items-baseline justify-between">
-                        <span className="text-sm text-[var(--suave)]">Cambio</span>
-                        <strong className="text-xl">{pesos(cambio)}</strong>
-                      </div>
-                      {cambio > 0n ? (
-                        <p className="mt-1 text-xs text-[var(--suave)]">
-                          {sugerenciaDeCambio(cambio)}
-                        </p>
-                      ) : (
-                        <p className="mt-1 text-xs text-[var(--suave)]">
-                          Teclea lo que entregó el cliente o pulsa una denominación.
-                        </p>
-                      )}
-                    </div>
-                  </>
+                    ))}
+                  </div>
                 ) : (
                   <Aviso tono="info">
-                    Se cobrarán {pesos(total)} con {textoMetodo(metodo)}. El cobro en la terminal
-                    bancaria se hace aparte; aquí sólo se registra el método.
+                    El cambio sólo se puede dar en efectivo. Agrega una forma de pago en efectivo
+                    si el cliente entrega de más.
                   </Aviso>
                 )}
 
@@ -784,6 +1145,119 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
           </div>
         </div>
       ) : null}
+
+      {libre ? (
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-auto bg-black/40 p-4">
+          <Tarjeta className="mt-12 w-full max-w-md p-5">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Venta libre</h2>
+                <p className="text-sm text-[var(--suave)]">
+                  Para copias, impresiones o servicios. No mueve inventario.
+                </p>
+              </div>
+              <Boton
+                variante="secundario"
+                onClick={() => setLibre(false)}
+              >
+                Cerrar (Esc)
+              </Boton>
+            </div>
+
+            <form
+              className="flex flex-col gap-3"
+              onSubmit={(evento) => {
+                evento.preventDefault();
+                agregarVentaLibre();
+              }}
+            >
+              <label className="flex flex-col gap-1 text-xs font-medium text-[var(--suave)]">
+                Qué se vendió
+                <Entrada
+                  autoFocus
+                  value={libreDescripcion}
+                  onChange={(evento) => setLibreDescripcion(evento.target.value)}
+                  placeholder="Ej. 10 copias tamaño carta"
+                />
+              </label>
+              <div className="flex gap-2">
+                <label className="flex flex-1 flex-col gap-1 text-xs font-medium text-[var(--suave)]">
+                  Precio por pieza o servicio
+                  <Entrada
+                    value={librePrecio}
+                    onChange={(evento) => setLibrePrecio(evento.target.value)}
+                    placeholder="2.50"
+                    inputMode="decimal"
+                  />
+                </label>
+                <label className="flex w-24 flex-col gap-1 text-xs font-medium text-[var(--suave)]">
+                  Cantidad
+                  <Entrada
+                    value={libreCantidad}
+                    onChange={(evento) => setLibreCantidad(evento.target.value)}
+                    inputMode="numeric"
+                  />
+                </label>
+              </div>
+
+              {errorLibre === null ? null : <Aviso tono="mal">{errorLibre}</Aviso>}
+
+              <Boton type="submit" className="mt-1">
+                Agregar al carrito
+              </Boton>
+            </form>
+          </Tarjeta>
+        </div>
+      ) : null}
+
+      {cancelacion === null ? null : (
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-auto bg-black/50 p-4">
+          <Tarjeta className="mt-16 w-full max-w-md p-5">
+            <h2 className="text-lg font-semibold">Cancelar venta</h2>
+            <p className="mt-1 text-sm text-[var(--suave)]">
+              Ticket <strong className="font-mono text-[var(--texto)]">{cancelacion.folioLocal}</strong>{' '}
+              por {pesos(cancelacion.totalMinor)}. El stock vuelve y la venta sale del arqueo.
+            </p>
+
+            <label className="mt-4 flex flex-col gap-1 text-xs font-medium text-[var(--suave)]">
+              Motivo (obligatorio)
+              <Entrada
+                autoFocus
+                value={cancelacion.motivo}
+                onChange={(evento) =>
+                  setCancelacion({ ...cancelacion, motivo: evento.target.value })
+                }
+                placeholder="Ej. se cobró dos veces"
+              />
+            </label>
+
+            {errorCancelacion === null ? null : (
+              <Aviso tono="mal" className="mt-3">
+                {errorCancelacion}
+              </Aviso>
+            )}
+
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <Boton
+                variante="peligro"
+                className="flex-1"
+                onClick={() => void cancelar()}
+                disabled={cancelando || cancelacion.motivo.trim() === ''}
+              >
+                {cancelando ? 'Cancelando…' : 'Cancelar la venta'}
+              </Boton>
+              <Boton
+                variante="secundario"
+                className="flex-1"
+                onClick={() => setCancelacion(null)}
+                disabled={cancelando}
+              >
+                Volver
+              </Boton>
+            </div>
+          </Tarjeta>
+        </div>
+      )}
 
       {cierre && turno !== null && turno !== undefined ? (
         <div className="fixed inset-0 z-30 overflow-auto bg-black/40 p-4">
@@ -884,6 +1358,58 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
               )}
 
               <div className="mt-5 border-t border-[var(--linea)] pt-4">
+                <h3 className="text-sm font-semibold">Ventas del turno</h3>
+                <p className="mb-2 text-xs text-[var(--suave)]">
+                  Cancelar devuelve el stock y saca la venta del arqueo. Queda registrado quién
+                  la canceló y por qué; no se borra.
+                </p>
+                {ventasTurno.length === 0 ? (
+                  <p className="text-xs text-[var(--suave)]">Todavía no hay ventas en este turno.</p>
+                ) : (
+                  <ul className="divide-y divide-[var(--linea)] text-sm">
+                    {ventasTurno.map((fila) => (
+                      <li
+                        key={fila.ventaId}
+                        className="flex items-center justify-between gap-2 py-1.5"
+                      >
+                        <span className="min-w-0">
+                          <span className="font-mono font-medium">{fila.folioLocal}</span>{' '}
+                          <span className="text-[var(--suave)]">
+                            {new Date(fila.ocurridoAt).toLocaleTimeString('es-MX', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span className="font-mono">{pesos(fila.totalMinor)}</span>
+                          {fila.estado === 'completada' ? (
+                            <Boton
+                              variante="peligro"
+                              className="px-2.5 py-1 text-xs"
+                              onClick={() => {
+                                setErrorCancelacion(null);
+                                setCancelacion({
+                                  ventaId: fila.ventaId,
+                                  folioLocal: fila.folioLocal,
+                                  totalMinor: fila.totalMinor,
+                                  motivo: '',
+                                });
+                              }}
+                            >
+                              Cancelar
+                            </Boton>
+                          ) : (
+                            <span className="text-xs text-[var(--mal)]">Cancelada</span>
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="mt-5 border-t border-[var(--linea)] pt-4">
                 <h3 className="text-sm font-semibold">Movimientos de cajón</h3>
                 <p className="mb-2 text-xs text-[var(--suave)]">
                   Retiros, gastos e ingresos que no son ventas. Sin ellos, el arqueo siempre da
@@ -952,6 +1478,22 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
           </div>
         </div>
       ) : null}
+
+      {stepUp === null ? null : (
+        <DialogoStepUp
+          base={base}
+          sesion={sesion}
+          permiso={stepUp.permiso}
+          descripcion={stepUp.descripcion}
+          {...(stepUp.entidadId === undefined ? {} : { entidadId: stepUp.entidadId })}
+          onCancelar={() => setStepUp(null)}
+          onAutorizado={async () => {
+            const accion = stepUp.accion;
+            setStepUp(null);
+            await accion();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1039,17 +1581,21 @@ function Buscador({
   onBusqueda,
   onBuscar,
   resultados,
+  favoritos,
   buscando,
   buscador,
   onAgregar,
+  onVentaLibre,
 }: {
   readonly busqueda: string;
   readonly onBusqueda: (valor: string) => void;
   readonly onBuscar: (evento: React.FormEvent) => void;
   readonly resultados: readonly FilaProducto[];
+  readonly favoritos: readonly FilaProducto[];
   readonly buscando: boolean;
   readonly buscador: React.RefObject<HTMLInputElement | null>;
   readonly onAgregar: (fila: FilaProducto) => void;
+  readonly onVentaLibre: () => void;
 }) {
   return (
     <Tarjeta className="p-4">
@@ -1070,6 +1616,36 @@ function Buscador({
           Escanear dos veces el mismo código suma dos piezas. Enter agrega el primer resultado.
         </p>
       </form>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Boton
+          variante="secundario"
+          className="px-2.5 py-1.5 text-xs"
+          onClick={onVentaLibre}
+        >
+          Venta libre: copias o servicio (F4)
+        </Boton>
+      </div>
+
+      {busqueda.trim() === '' && favoritos.length > 0 ? (
+        <div className="mt-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-[var(--suave)]">
+            Más vendidos
+          </p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {favoritos.map((fila) => (
+              <Boton
+                key={fila.id}
+                variante="secundario"
+                className="px-2.5 py-1.5 text-xs"
+                onClick={() => onAgregar(fila)}
+              >
+                {fila.nombre} · {pesos(fila.precioMinor)}
+              </Boton>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {buscando ? (
         <p className="mt-3 text-xs text-[var(--suave)]">Buscando…</p>

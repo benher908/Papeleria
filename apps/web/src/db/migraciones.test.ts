@@ -34,6 +34,8 @@ describe('migraciones en el navegador', () => {
       '0006_secuencias.sql',
       '0007_caja.sql',
       '0008_retiros_sin_step_up_por_defecto.sql',
+      '0009_step_up_password.sql',
+      '0010_venta_libre.sql',
     ]);
   });
 });

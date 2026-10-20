@@ -44,6 +44,7 @@ import { comoClienteTransaccional } from '../db/cliente';
 import { montarPanel } from '../diagnostico/panel';
 import type { ColaEscaneo } from '../escaneo/cola';
 import { PantallaVenta } from '../pos/PantallaVenta';
+import { PantallaRespaldo } from '../respaldo/PantallaRespaldo';
 import { Formulario, type OpcionCatalogo, type ValoresFormulario } from './Formulario';
 import { pesos } from './formato';
 import { Lista } from './Lista';
@@ -55,7 +56,7 @@ export interface PropsApp {
 }
 
 type Vista = { readonly tipo: 'lista' } | { readonly tipo: 'nuevo' } | { readonly tipo: 'editar'; readonly fila: FilaProducto };
-type Pestana = 'vender' | 'productos' | 'diagnostico';
+type Pestana = 'vender' | 'productos' | 'respaldo' | 'diagnostico';
 
 interface Exito {
   readonly texto: string;
@@ -243,6 +244,7 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
             [
               ['vender', 'Vender'],
               ['productos', 'Productos'],
+              ['respaldo', 'Respaldo'],
               ['diagnostico', 'Diagnóstico'],
             ] as const
           ).map(([clave, texto]) => (
@@ -272,6 +274,10 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
           carrito a medio armar ni perder el turno que se acaba de abrir. */}
       <div hidden={pestana !== 'vender'} className="mx-auto max-w-6xl px-5 py-6">
         <PantallaVenta base={base} sesion={sesion} cola={cola} />
+      </div>
+
+      <div hidden={pestana !== 'respaldo'} className="mx-auto max-w-3xl px-5 py-6">
+        <PantallaRespaldo base={base} />
       </div>
 
       <div hidden={pestana !== 'productos'} className="mx-auto max-w-5xl px-5 py-6">

@@ -135,6 +135,7 @@ export async function montarApp(raiz: HTMLElement): Promise<void> {
       const dispositivo = await dispositivoDeLaSesion(base, activa.dispositivoId);
       guardarDispositivo(dispositivo);
       mostrarCaja({
+        sesionId: activa.sesionId,
         usuario: activa.usuario,
         dispositivo,
         idle_expires_at: activa.idle_expires_at,

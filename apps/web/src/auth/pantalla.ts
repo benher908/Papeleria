@@ -45,6 +45,7 @@ const CONTEXTO: ContextoSesion = 'caja';
 const PROHIBIDAS = ['papeleria', 'papelería', 'caja', 'duena', 'dueña'];
 
 export interface SesionIniciada {
+  readonly sesionId: string;
   readonly usuario: UsuarioPublico;
   readonly dispositivo: DispositivoGuardado;
   readonly idle_expires_at: number;
@@ -146,6 +147,7 @@ export function montarEntrada(
     guardarToken(resultado.sesion.token);
     guardarDispositivo(dispositivo);
     opciones.alEntrar({
+      sesionId: resultado.sesion.sesionId,
       usuario: resultado.usuario,
       dispositivo,
       idle_expires_at: resultado.sesion.idle_expires_at,

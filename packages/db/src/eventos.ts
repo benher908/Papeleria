@@ -103,11 +103,18 @@ export interface DecisionAutorizacion {
 /** El evento no se emitió porque una política lo prohibió. */
 export class ErrorNoAutorizado extends Error {
   readonly motivo: string;
+  /**
+   * Las obligaciones que la política dejó pendientes (`step_up`,
+   * `motivo_obligatorio`…). La pantalla las necesita para saber si puede pedir
+   * la contraseña y reintentar, en vez de mostrar un «no autorizado» sin salida.
+   */
+  readonly obligaciones: readonly string[];
 
-  constructor(tipo: string, motivo: string) {
+  constructor(tipo: string, motivo: string, obligaciones: readonly string[] = []) {
     super(`No autorizado para emitir "${tipo}": ${motivo}`);
     this.name = 'ErrorNoAutorizado';
     this.motivo = motivo;
+    this.obligaciones = obligaciones;
   }
 }
 
@@ -198,7 +205,7 @@ export async function emitirEvento<Tipo extends string, Payload>(
     //    políticas que deciden son las que verá el COMMIT.
     const decision = await entrada.autorizar(evento, tx);
     if (!decision.permitido) {
-      throw new ErrorNoAutorizado(entrada.tipo, decision.motivo);
+      throw new ErrorNoAutorizado(entrada.tipo, decision.motivo, decision.obligaciones);
     }
 
     // 4. El estado. Si esto lanza, se revierte todo: evento, contadores y auditoría.

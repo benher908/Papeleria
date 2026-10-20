@@ -560,7 +560,7 @@ export async function registrarMovimientoCaja(
 
       return exigirObligaciones(decision, {
         motivo: concepto,
-        queFalta: 'Este movimiento necesita autorización del dueño (PIN), que todavía no está disponible.',
+        queFalta: 'Este movimiento necesita autorización del dueño.',
       });
     },
 

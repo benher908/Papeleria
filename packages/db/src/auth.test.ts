@@ -9,6 +9,7 @@ import {
   asignarRol,
   cerrarSesion,
   cerrarSesionesDeUsuario,
+  concederStepUp,
   crearSesion,
   crearUsuario,
   entrar,
@@ -88,7 +89,8 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  // De hijos a padres: `devices` apunta a `users` y `sessions` a los dos.
+  // De hijos a padres: `step_up_grants` apunta a `sessions`; `devices` a `users`.
+  await cliente.exec('DELETE FROM step_up_grants');
   await cliente.exec('DELETE FROM sessions');
   await cliente.exec('DELETE FROM devices');
   await cliente.exec('DELETE FROM users');
@@ -532,5 +534,74 @@ describe('entrar', () => {
 
     await cliente.query(`UPDATE users SET is_activo = false WHERE id = $1`, [usuarioId]);
     expect(await verificarSesion(cliente, sesion.token)).toBeNull();
+  });
+});
+
+describe('step-up con contraseña', () => {
+  test('la contraseña correcta otorga el permiso y deja el método escrito', async () => {
+    const { usuarioId, dispositivoId } = await montar();
+    const sesion = await crearSesion(cliente, { usuarioId, dispositivoId, contexto: 'caja' });
+    const entidad = '01900000-0000-7000-9001-000000000001';
+
+    const otorgado = await concederStepUp(cliente, {
+      usuarioId,
+      sesionId: sesion.sesionId,
+      contrasena: CONTRASENA,
+      motivo: 'ventas:cancelar',
+      entidadId: entidad,
+    });
+
+    const { rows } = await cliente.query<{
+      metodo: string;
+      motivo: string;
+      entidad_id: string | null;
+      vigente: boolean;
+    }>(
+      `SELECT metodo, motivo, entidad_id, expira_at > now() AS vigente
+         FROM step_up_grants WHERE id = $1`,
+      [otorgado.id],
+    );
+
+    expect(rows[0]).toMatchObject({
+      metodo: 'password',
+      motivo: 'ventas:cancelar',
+      entidad_id: entidad,
+      vigente: true,
+    });
+    expect(new Date(otorgado.expiraAt).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  test('una contraseña equivocada no otorga nada', async () => {
+    const { usuarioId, dispositivoId } = await montar();
+    const sesion = await crearSesion(cliente, { usuarioId, dispositivoId, contexto: 'caja' });
+
+    await expect(
+      concederStepUp(cliente, {
+        usuarioId,
+        sesionId: sesion.sesionId,
+        contrasena: 'no-es-la-buena',
+        motivo: 'turnos:retiros',
+      }),
+    ).rejects.toThrow('La contraseña no es correcta.');
+
+    const { rows } = await cliente.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM step_up_grants`,
+    );
+    expect(rows[0]?.n).toBe(0);
+  });
+
+  test('una sesión revocada no puede autorizar, aunque la contraseña sea correcta', async () => {
+    const { usuarioId, dispositivoId } = await montar();
+    const sesion = await crearSesion(cliente, { usuarioId, dispositivoId, contexto: 'caja' });
+    await cerrarSesion(cliente, sesion.token);
+
+    await expect(
+      concederStepUp(cliente, {
+        usuarioId,
+        sesionId: sesion.sesionId,
+        contrasena: CONTRASENA,
+        motivo: 'turnos:cerrar',
+      }),
+    ).rejects.toThrow('La sesión ya no vale.');
   });
 });

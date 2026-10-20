@@ -332,6 +332,104 @@ export async function siguienteCodigoLibre(cliente: ClienteSql, base = 'C'): Pro
   throw new Error(`No queda ningún código libre en la serie «${base}n».`);
 }
 
+// ─────────────────────────── step-up ───────────────────────────
+
+/**
+ * Autoriza una acción sensible durante los próximos cinco minutos.
+ *
+ * Sustituye al PIN de F6 mientras esa pantalla no exista: la dueña ya tiene una
+ * contraseña, y pedirla otra vez es una re-autenticación real, no un botón de
+ * «continuar». La fila queda en `step_up_grants` con el permiso que la disparó
+ * (`motivo`) y, si la acción es sobre un objeto concreto, su `entidad_id`.
+ *
+ * La verificación se hace aquí y no en la pantalla: la pantalla no ve el hash.
+ * La sesión se comprueba en la misma consulta para que un `sesionId` inventado
+ * o revocado no pueda otorgar nada.
+ */
+export interface OpcionesStepUp {
+  readonly usuarioId: string;
+  readonly sesionId: string;
+  readonly contrasena: string;
+  /** El permiso que se está autorizando: `'ventas:cancelar'`. */
+  readonly motivo: string;
+  readonly entidadId?: string;
+}
+
+export interface StepUpConcedido {
+  readonly id: string;
+  readonly otorgadoAt: string;
+  readonly expiraAt: string;
+}
+
+export async function concederStepUp(
+  cliente: ClienteSql,
+  opciones: OpcionesStepUp,
+): Promise<StepUpConcedido> {
+  const motivo = opciones.motivo.trim();
+  if (motivo === '') {
+    throw new Error('El step-up necesita decir qué permiso autoriza.');
+  }
+
+  const { rows } = await cliente.query<{
+    password_hash: string | null;
+    is_activo: boolean;
+  }>(
+    `SELECT u.password_hash, u.is_activo
+       FROM users u
+       JOIN sessions s ON s.user_id = u.id
+      WHERE u.id = $1
+        AND s.id = $2
+        AND s.revoked_at IS NULL
+        AND s.idle_expires_at > now()
+        AND s.absolute_expires_at > now()
+        AND u.deleted_at IS NULL
+      LIMIT 1`,
+    [opciones.usuarioId, opciones.sesionId],
+  );
+
+  const fila = rows[0];
+  if (fila === undefined || fila.password_hash === null || !fila.is_activo) {
+    throw new Error('La sesión ya no vale. Vuelve a entrar.');
+  }
+
+  if (!(await verificarContrasena(opciones.contrasena, fila.password_hash))) {
+    throw new Error('La contraseña no es correcta.');
+  }
+
+  const id = uuidV7();
+  const { rows: creado } = await cliente.query<{
+    otorgado_at: Date | string;
+    expira_at: Date | string;
+  }>(
+    `INSERT INTO step_up_grants
+       (id, user_id, session_id, metodo, motivo, entidad_id, expira_at)
+     VALUES ($1, $2, $3, 'password', $4, $5, now() + interval '5 minutes')
+     RETURNING otorgado_at, expira_at`,
+    [
+      id,
+      opciones.usuarioId,
+      opciones.sesionId,
+      motivo,
+      opciones.entidadId ?? null,
+    ],
+  );
+
+  const creada = creado[0];
+  if (creada === undefined) {
+    throw new Error('No se pudo guardar la autorización.');
+  }
+
+  return {
+    id,
+    otorgadoAt: fechaIso(creada.otorgado_at),
+    expiraAt: fechaIso(creada.expira_at),
+  };
+}
+
+function fechaIso(valor: Date | string): string {
+  return valor instanceof Date ? valor.toISOString() : new Date(valor).toISOString();
+}
+
 // ─────────────────────────── sesiones ───────────────────────────
 
 export interface SesionCreada {

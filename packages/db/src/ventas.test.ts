@@ -6,7 +6,7 @@ import { adaptarPglite } from './adaptadores';
 import { cargarMigraciones } from './archivos';
 import { abrirTurno, resumenTurno } from './caja';
 import { ErrorNoAutorizado } from './eventos';
-import { buscarProductoPorCodigo, crearProducto } from './productos';
+import { buscarProductoPorCodigo, crearProducto, productosMasVendidos } from './productos';
 import { migrar, type ClienteTransaccional } from './runner';
 import {
   cancelarVenta,
@@ -111,6 +111,10 @@ describe('registrar una venta', () => {
       precioUnitarioMinor: 4500n,
       costoUnitarioMinor: 2800n,
     });
+
+    // La tira de favoritos del POS se alimenta de esta consulta: la venta que
+    // acaba de ocurrir ya pone el cuaderno primero.
+    expect((await productosMasVendidos(cliente, 8))[0]?.id).toBe(venta.lineas[0]?.productoId);
 
     const ventaFila = await cliente.query<{
       total: unknown;
@@ -407,5 +411,55 @@ describe('cancelar una venta', () => {
     await expect(
       cancelarVenta(cliente, { ventaId: venta.ventaId, motivo: '   ' }, contexto),
     ).rejects.toBeInstanceOf(ErrorVenta);
+  });
+});
+
+describe('venta libre', () => {
+  test('un servicio con descripción y precio propios no mueve inventario', async () => {
+    const libreId = '01900000-0000-7000-9001-000000000101';
+    await cliente.query(
+      `INSERT INTO products (id, sku, nombre, unit_id, precio_minor, costo_minor, tracks_stock)
+       VALUES ($1, 'VENTA-LIBRE', 'Venta libre', $2, 0, 0, false)`,
+      [libreId, UNIDAD_PIEZA],
+    );
+    const turno = await abrirTurno(cliente, { fondoInicialMinor: 50000n }, { ...contexto, ahora: AHORA });
+
+    const venta = await registrarVenta(
+      cliente,
+      {
+        turnoId: turno.id,
+        lineas: [
+          {
+            productoId: libreId,
+            qty: 10_000,
+            precioUnitarioMinor: 250n,
+            descripcion: '10 copias tamaño carta',
+            esVentaLibre: true,
+          },
+        ],
+        pagos: [{ metodo: 'efectivo', montoMinor: 5000n }],
+      },
+      { ...contexto, ahora: AHORA },
+    );
+
+    expect(venta.totalMinor).toBe(2500n);
+    expect(venta.cambioMinor).toBe(2500n);
+    expect(venta.lineas[0]).toMatchObject({
+      descripcion: '10 copias tamaño carta',
+      qty: 10_000,
+      precioUnitarioMinor: 250n,
+    });
+
+    expect(
+      await contar(`SELECT count(*)::int AS n FROM stock_movements WHERE product_id = $1`, [libreId]),
+    ).toBe(0);
+    expect(
+      await contar(
+        `SELECT count(*)::int AS n FROM sale_lines WHERE sale_id = $1 AND es_venta_libre`,
+        [venta.ventaId],
+      ),
+    ).toBe(1);
+    // Sin stock, el producto tampoco debe aparecer en «más vendidos».
+    expect((await productosMasVendidos(cliente, 8)).map((fila) => fila.id)).not.toContain(libreId);
   });
 });

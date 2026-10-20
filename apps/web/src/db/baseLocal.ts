@@ -73,11 +73,23 @@ export interface BaseLocal extends Consultas {
    */
   sincronizar(): Promise<void>;
 
+  /**
+   * Descarga un volcado completo del directorio de datos (tar.gz).
+   *
+   * Es el respaldo de verdad: incluye esquema, migraciones, ventas, usuarios y
+   * hashes. No es un CSV de productos; es la base entera, y sólo se puede
+   * restaurar con esta misma pantalla.
+   */
+  respaldar(): Promise<Blob>;
+
   cerrar(): Promise<void>;
 }
 
 /** Dónde vive la base. `idb://` persiste en IndexedDB. */
 export const DIRECTORIO_POR_DEFECTO = 'idb://papeleria';
+
+/** Nombre real de la base en IndexedDB (PGlite lo deriva del `dataDir`). */
+const IDB_POR_DEFECTO = '/pglite/papeleria';
 
 /** Grupo de elección de líder. Constante: ver la nota de arriba. */
 export const GRUPO_POR_DEFECTO = 'papeleria';
@@ -87,6 +99,8 @@ export interface OpcionesBaseLocal {
   dataDir?: string;
   /** Cambia el grupo de elección (útil para pruebas aisladas). */
   grupo?: string;
+  /** Volcado de PGlite que se carga al abrir (restauración). */
+  cargar?: Blob;
 }
 
 let pendiente: Promise<BaseLocal> | undefined;
@@ -109,6 +123,7 @@ export async function abrirBaseLocal(opciones: OpcionesBaseLocal = {}): Promise<
   const pg = await PGliteWorker.create(obrero, {
     dataDir: opciones.dataDir ?? DIRECTORIO_POR_DEFECTO,
     id: opciones.grupo ?? GRUPO_POR_DEFECTO,
+    ...(opciones.cargar === undefined ? {} : { loadDataDir: opciones.cargar }),
   });
 
   return envolver(pg);
@@ -159,6 +174,70 @@ function envolver(pg: PGliteWorker): BaseLocal {
 
     sincronizar: () => pg.syncToFs(),
 
+    respaldar: async () => await pg.dumpDataDir('gzip'),
+
     cerrar: () => pg.close(),
   };
+}
+
+function borrarBaseDeIndexedDb(nombre: string): Promise<void> {
+  return new Promise((resolver, rechazar) => {
+    const solicitud = indexedDB.deleteDatabase(nombre);
+    solicitud.onsuccess = () => resolver();
+    solicitud.onerror = () =>
+      rechazar(solicitud.error ?? new Error('No se pudo borrar la base anterior.'));
+    solicitud.onblocked = () =>
+      rechazar(
+        new Error(
+          'Otra pestaña está usando la base. Cierra las demás pestañas de la papelería y vuelve a intentar.',
+        ),
+      );
+  });
+}
+
+/**
+ * Reemplaza la base entera por un respaldo descargado antes.
+ *
+ * El orden importa: se guarda un volcado de la base actual en memoria, se cierra
+ * PGlite, se borra IndexedDB y se abre de nuevo con `loadDataDir`. Si el archivo
+ * no es un volcado válido, se vuelve a abrir la base anterior; por eso el respaldo
+ * de seguridad se toma ANTES de tocar nada.
+ *
+ * Al terminar hay que recargar la página: los componentes que ya estaban
+ * montados siguen apuntando a la conexión cerrada. La pantalla de respaldo lo
+ * hace y explica por qué.
+ */
+export async function restaurarBaseLocal(archivo: Blob): Promise<BaseLocal> {
+  const actual = await baseLocal();
+  if (!actual.esLider) {
+    throw new Error(
+      'Esta pestaña no es la dueña de la base. Cierra las demás pestañas de la papelería y vuelve a intentar.',
+    );
+  }
+
+  const anterior = await actual.respaldar();
+  await actual.cerrar();
+  pendiente = undefined;
+
+  try {
+    await borrarBaseDeIndexedDb(IDB_POR_DEFECTO);
+    pendiente = abrirBaseLocal({ cargar: archivo });
+    const nueva = await pendiente;
+    await nueva.sincronizar();
+    return nueva;
+  } catch (causa) {
+    // El archivo no servía. Se intenta dejar la papelería como estaba antes de
+    // que el dueño eligiera el archivo equivocado.
+    pendiente = undefined;
+    try {
+      await borrarBaseDeIndexedDb(IDB_POR_DEFECTO);
+    } catch {
+      // Si ni siquiera se puede borrar, el error de abajo ya dice qué pasó.
+    }
+    pendiente = abrirBaseLocal({ cargar: anterior });
+    await pendiente;
+    throw new Error(
+      `No se pudo restaurar el archivo (${causa instanceof Error ? causa.message : String(causa)}). Se dejó la base anterior.`,
+    );
+  }
 }

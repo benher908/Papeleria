@@ -47,6 +47,8 @@ describe('runner de migraciones', () => {
       '0006_secuencias.sql',
       '0007_caja.sql',
       '0008_retiros_sin_step_up_por_defecto.sql',
+      '0009_step_up_password.sql',
+      '0010_venta_libre.sql',
     ]);
 
     const resultado = await migrar(cliente, migraciones);
@@ -54,7 +56,7 @@ describe('runner de migraciones', () => {
     expect(resultado.aplicadas).toEqual(migraciones.map((m) => m.nombre));
     expect(resultado.yaAplicadas).toEqual([]);
     expect(resultado.huerfanas).toEqual([]);
-    expect(resultado.estado).toHaveLength(8);
+    expect(resultado.estado).toHaveLength(10);
     expect(resultado.estado.every((m) => m.duracion_ms !== null)).toBe(true);
     expect(resultado.estado.map((m) => m.hash)).toEqual(migraciones.map((m) => m.hash));
   });
@@ -68,7 +70,7 @@ describe('runner de migraciones', () => {
 
     expect(segunda.aplicadas).toEqual([]);
     expect(segunda.yaAplicadas).toEqual(migraciones.map((m) => m.nombre));
-    expect(await contar(cliente, 'SELECT count(*)::int AS n FROM schema_migrations')).toBe(8);
+    expect(await contar(cliente, 'SELECT count(*)::int AS n FROM schema_migrations')).toBe(10);
 
     // Y las semillas no se duplicaron: los roles siguen siendo cuatro.
     expect(await contar(cliente, 'SELECT count(*)::int AS n FROM roles')).toBe(4);
@@ -91,7 +93,7 @@ describe('runner de migraciones', () => {
     await expect(migrar(cliente, alteradas)).rejects.toThrow(/0001_init\.sql/);
 
     // Y no se aplicó nada nuevo: el registro sigue intacto.
-    expect(await contar(cliente, 'SELECT count(*)::int AS n FROM schema_migrations')).toBe(8);
+    expect(await contar(cliente, 'SELECT count(*)::int AS n FROM schema_migrations')).toBe(10);
   });
 
   test('reporta migraciones huérfanas: aplicadas en la base, sin archivo en disco', async () => {
@@ -108,6 +110,8 @@ describe('runner de migraciones', () => {
       '0006_secuencias.sql',
       '0007_caja.sql',
       '0008_retiros_sin_step_up_por_defecto.sql',
+      '0009_step_up_password.sql',
+      '0010_venta_libre.sql',
     ]);
     expect(resultado.aplicadas).toEqual([]);
   });
@@ -134,7 +138,7 @@ describe('runner de migraciones', () => {
     expect(
       await contar(cliente, `SELECT count(*)::int AS n FROM schema_migrations WHERE nombre = '0007_rota.sql'`),
     ).toBe(0);
-    expect(await contar(cliente, 'SELECT count(*)::int AS n FROM schema_migrations')).toBe(8);
+    expect(await contar(cliente, 'SELECT count(*)::int AS n FROM schema_migrations')).toBe(10);
   });
 
   test('el error de una migración rota dice en qué archivo fue, y qué dijo el motor', async () => {

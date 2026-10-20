@@ -356,6 +356,20 @@ export async function crearProducto(
 // ───────────────────────────── lectura ─────────────────────────────
 
 /**
+ * El producto de servicios que usa la venta libre (fotocopias, engargolados).
+ *
+ * No es un producto de inventario: `tracks_stock = false`, precio 0 y sin código.
+ * La venta libre manda su propia descripción y su precio en la línea, pero necesita
+ * una fila de `products` porque `sale_lines.product_id` no es nullable y no debe
+ * serlo: un renglón de ticket sin producto rompe los reportes de margen.
+ *
+ * El UUID es fijo para que el PC y el futuro servidor reconozcan la misma fila;
+ * por eso vive en una migración y no se crea desde la pantalla.
+ */
+export const ID_VENTA_LIBRE = '01900000-0000-7000-8100-000000000001';
+export const SKU_VENTA_LIBRE = 'VENTA-LIBRE';
+
+/**
  * Los productos vivos, con lo que la lista necesita para no hacer N+1 consultas.
  *
  * `filtro` busca por nombre, SKU y código. Se usa `ILIKE` y no el índice GIN de
@@ -396,11 +410,82 @@ export async function listarProductos(
        LEFT JOIN categories c ON c.id = p.category_id
        LEFT JOIN stock_levels sl ON sl.product_id = p.id
       WHERE p.deleted_at IS NULL
+        AND p.sku IS DISTINCT FROM $2
         AND ($1 = '%%' OR p.nombre ILIKE $1 OR COALESCE(p.sku, '') ILIKE $1
              OR EXISTS (SELECT 1 FROM product_barcodes b
                          WHERE b.product_id = p.id AND b.deleted_at IS NULL AND b.codigo ILIKE $1))
       ORDER BY p.nombre`,
-    [texto],
+    [texto, SKU_VENTA_LIBRE],
+  );
+
+  return rows.map((fila) => ({
+    id: fila.id,
+    nombre: fila.nombre,
+    sku: fila.sku,
+    precioMinor: String(fila.precio_minor),
+    costoMinor: String(fila.costo_minor),
+    categoria: fila.categoria,
+    unidad: fila.unidad,
+    unidadAbreviatura: fila.abreviatura,
+    stock: String(fila.stock),
+    stockMinimo: String(fila.stock_minimo),
+    codigo: fila.codigo,
+    ubicacion: fila.ubicacion,
+    isActivo: fila.is_activo,
+  }));
+}
+
+/**
+ * Los más vendidos, para la tira de favoritos del POS (F2.9).
+ *
+ * Se calcula con las ventas completadas: no hay una tabla de «favoritos» que
+ * alguien tenga que mantener a mano, y el orden refleja lo que de verdad sale.
+ * Devuelve la misma forma que `listarProductos` para que la pantalla los trate
+ * igual que un resultado de búsqueda.
+ */
+export async function productosMasVendidos(
+  cliente: ClienteSql,
+  limite = 8,
+): Promise<FilaProducto[]> {
+  const { rows } = await cliente.query<{
+    id: string;
+    nombre: string;
+    sku: string | null;
+    precio_minor: unknown;
+    costo_minor: unknown;
+    categoria: string | null;
+    unidad: string;
+    abreviatura: string;
+    stock: unknown;
+    codigo: string | null;
+    ubicacion: string | null;
+    is_activo: boolean;
+    stock_minimo: unknown;
+  }>(
+    `SELECT p.id, p.nombre, p.sku, p.precio_minor, p.costo_minor,
+            c.nombre AS categoria, u.nombre AS unidad, u.abreviatura,
+            COALESCE(sl.qty_base, 0) AS stock,
+            (SELECT b.codigo FROM product_barcodes b
+              WHERE b.product_id = p.id AND b.deleted_at IS NULL
+              ORDER BY b.es_primario DESC, b.creado_at ASC LIMIT 1) AS codigo,
+            p.ubicacion, p.is_activo, p.stock_minimo
+       FROM products p
+       JOIN units u ON u.id = p.unit_id
+       LEFT JOIN categories c ON c.id = p.category_id
+       LEFT JOIN stock_levels sl ON sl.product_id = p.id
+       JOIN (
+         SELECT sl2.product_id, SUM(sl2.qty_base) AS vendidos
+           FROM sale_lines sl2
+           JOIN sales s ON s.id = sl2.sale_id
+          WHERE s.estado = 'completada'
+          GROUP BY sl2.product_id
+       ) vendidos ON vendidos.product_id = p.id
+      WHERE p.deleted_at IS NULL
+        AND p.is_activo
+        AND p.sku IS DISTINCT FROM $2
+      ORDER BY vendidos.vendidos DESC, p.nombre
+      LIMIT $1`,
+    [limite, SKU_VENTA_LIBRE],
   );
 
   return rows.map((fila) => ({

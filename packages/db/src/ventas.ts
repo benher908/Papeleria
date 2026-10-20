@@ -86,6 +86,8 @@ export interface LineaParaVender {
   readonly descuentoMinor?: Centavos;
   /** Si se omite, se usa el nombre del producto. */
   readonly descripcion?: string;
+  /** Marca el renglón como servicio libre (fotocopias). No cambia el stock. */
+  readonly esVentaLibre?: boolean;
 }
 
 export interface PagoParaVender {
@@ -317,7 +319,7 @@ export async function registrarVenta(
       return exigirObligaciones(decision, {
         motivo: datos.motivo ?? null,
         queFalta:
-          'Un descuento así necesita autorización del dueño (PIN), que todavía no está disponible en esta pantalla.',
+          'Esta venta necesita autorización del dueño.',
       });
     },
 
@@ -622,12 +624,15 @@ export async function cancelarVenta(
           monto_minor: Number(aBigInt(venta.rows[0]?.total_minor)),
           es_venta_ya_cerrada: true,
         },
+        // Acotado a ESTA venta: autorizar la cancelación de un ticket no debe
+        // autorizar la del siguiente durante los cinco minutos de vigencia.
+        entidadId: datos.ventaId,
         ...(ahora === undefined ? {} : { ahora }),
       });
 
       return exigirObligaciones(decision, {
         motivo,
-        queFalta: 'Cancelar una venta cobrada necesita autorización del dueño (PIN).',
+        queFalta: 'Cancelar una venta cobrada necesita autorización del dueño.',
       });
     },
 
@@ -808,7 +813,7 @@ async function resolverLinea(tx: ClienteSql, linea: LineaParaVender): Promise<Li
       costo_unitario_minor: aBigInt(p.costo_minor).toString(),
       tax_rate_id: p.tax_rate_id,
       tracks_stock: p.tracks_stock,
-      es_venta_libre: false,
+      es_venta_libre: linea.esVentaLibre ?? false,
     },
     entrada: {
       qty: linea.qty,

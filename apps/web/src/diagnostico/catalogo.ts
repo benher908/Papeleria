@@ -19,7 +19,7 @@ export interface Comprobacion {
 export const COMPROBACIONES: readonly Comprobacion[] = [
   {
     que: 'tablas en public',
-    esperado: 36,
+    esperado: 38,
     sql: `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname = 'public'`,
   },
   // Las tres de 0004. Se comprueban por nombre y no sólo en el total: un recuento

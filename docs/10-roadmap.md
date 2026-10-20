@@ -136,13 +136,15 @@ que pediste. Media hora de trabajo que te ahorra semanas.
 | 1.10 | Importación desde Excel/CSV | Subes tu lista actual de productos de una vez |
 | 1.11 | **`outbox` + HLC** desde el primer día | Los eventos se generan con `device_seq` y `hlc` correctos |
 
-**Hecho hasta ahora:** **1.1 en curso** — la capa de datos y la pantalla de producto
-(alta, listado con búsqueda y edición) están hechas y probadas contra PGlite y PostgreSQL;
-faltan los CRUD de categorías, unidades y proveedores. Al dar de alta el primer producto
-en un navegador real apareció un fallo que las pruebas de la pantalla no podían ver: el
-primer usuario se creaba **sin rol**, así que la dueña no podía autorizar nada y el alta
-fallaba con «El rol no incluye productos:crear». `crearUsuario()` ahora le asigna `dueno`
-—sólo al primero— y hay `asignarRol()` para los siguientes. **1.2** (desde F0.2:
+**Hecho hasta ahora:** **1.1 en curso y usable** — la capa de datos y la pantalla de
+producto (alta, listado con búsqueda y edición) están hechas y probadas contra PGlite y
+PostgreSQL; faltan los CRUD de categorías, unidades y proveedores. Dos fallos reales
+salieron de usarla, y los dos eran de los que las pruebas no ven: el primero usuario se
+creaba **sin rol**, así que la dueña no podía autorizar nada y el alta fallaba con «El rol
+no incluye productos:crear» (`crearUsuario()` ahora le asigna `dueno` —sólo al primero— y
+hay `asignarRol()`); y el formulario de edición **borraba el stock mínimo** al guardar
+cualquier otra cosa, porque la lista no traía ese dato y el campo arrancaba en 0. Los dos
+corregidos y con prueba. **1.2** (desde F0.2:
 `digitoVerificadorEAN13`, `validaEAN13`, prefijo interno `2`, Code 128 y códigos de
 ubicación), **1.3** (`0006_secuencias.sql` + `packages/db/src/secuencias.ts`): la secuencia
 se reserva con un `UPDATE ... RETURNING` atómico dentro de la transacción del producto, y
@@ -429,7 +431,7 @@ Si de todo el documento solo puedes ejecutar tres cosas:
 
 Y después: **la tarea 0.9** (la cámara), que es la única de F0 que falta.
 
-> 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 y 0.10 ya están hechas: `pnpm test` corre **345 pruebas** sobre
+> 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 y 0.10 ya están hechas: `pnpm test` corre **347 pruebas** sobre
 > dinero, EAN-13, precios, totales, ULID, UUID v7, reloj lógico, migraciones, esquema,
 > la transacción que ata cada cambio del negocio a su evento, las políticas del
 > doc 06 §9 contra las reglas sembradas, el login local (contraseña, sesión, rol de la

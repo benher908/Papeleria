@@ -238,12 +238,15 @@ const filas = await listarProductos(cliente, 'lap');   // nombre, SKU o código
 | Pedir un precio **por debajo del costo** pide un permiso **extra** | `productos:crear`/`productos:editar` no bastan: si el precio es ≤ 0 o menor al costo se exige además `precios:editar` con `recurso.tipo = 'precio'`, y ahí es donde la política **P1/P2** dice que no. Se probó en el navegador: el alta se rechaza con «El precio nuevo queda por debajo del costo: vender así pierde dinero. Ni con autorización» |
 | El código interno se reserva **dentro** de la transacción | Ver `secuencias.ts`: si el producto no entra, el número no se gasta |
 | Un código repetido se explica, no se filtra | `uq_barcode` es global; el error se traduce a un mensaje que dice **de qué producto** es el código que ya existe, en vez de dejar salir un `23505` |
-| La lista y la búsqueda son **la misma consulta** | `listarProductos(cliente, filtro)` trae categoría, unidad, stock y el código primario en **una sola** consulta, y con un `filtro` busca por nombre, SKU y código. Hoy usa `ILIKE` a propósito: con 20 productos es instantáneo y encuentra «lap» dentro de «Lápiz»; el full-text llega en F1.6, cuando haya miles |
+| La lista y la búsqueda son **la misma consulta** | `listarProductos(cliente, filtro)` trae categoría, unidad, stock, **el punto de reposición** y el código primario en **una sola** consulta, y con un `filtro` busca por nombre, SKU y código. Hoy usa `ILIKE` a propósito: con 20 productos es instantáneo y encuentra «lap» dentro de «Lápiz»; el full-text llega en F1.6, cuando haya miles |
+| La fila lleva **todo** lo que el formulario edita | `stockMinimo` viaja en la fila por una razón que costó un fallo: el formulario de edición se llena con la fila, y si el dato no viniera, el campo arrancaría en 0 y **guardar cualquier otra cosa borraría el punto de reposición en silencio**. Se descubrió usando la pantalla, no las pruebas — que miraban la lista y no el ida y vuelta. Ahora hay una prueba que hace el recorrido completo |
 
 `productos.test.ts` cubre las dos caras de cada regla: que el estado y el evento entran
 **juntos** (si el evento falla, no queda producto), que el precio normal pasa y el
 precio-bajo-costo no, que el código se reserva o se respeta el que le des, que un código
-ajeno se rechaza nombrando al dueño, y que la edición también deja su evento.
+ajeno se rechaza nombrando al dueño, y que la edición también deja su evento. Desde el
+fallo de la pantalla, también que **el punto de reposición sobrevive** a una edición que
+no lo toca.
 
 ## Lo que el runner garantiza
 
@@ -275,8 +278,8 @@ docker rm -f papeleria-pruebas-pg
 > la que se conecta. Con el puerto cambiado, es imposible que le pegue al de verdad.
 
 Sin `DATABASE_URL_PRUEBAS` las dos pruebas que necesitan el motor real se **saltan**
-(aparecen como `skipped`); el resto corre igual contra PGlite. Son **150 pruebas con el
-PostgreSQL real** y **148 + 2 saltadas con sólo PGlite**.
+(aparecen como `skipped`); el resto corre igual contra PGlite. Son **152 pruebas con el
+PostgreSQL real** y **150 + 2 saltadas con sólo PGlite**.
 
 El test levanta un PGlite limpio, aplica las migraciones, hace lo mismo en el
 Postgres, y compara los dos catálogos línea a línea (tablas, columnas con su tipo

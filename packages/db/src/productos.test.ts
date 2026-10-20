@@ -246,7 +246,12 @@ describe('listado', () => {
   test('la lista trae categoría, unidad y stock, y busca por nombre y por código', async () => {
     const lapiz = await crearProducto(
       cliente,
-      producto({ nombre: 'Lápiz del 2', categoryId: CATEGORIA_ESCOLAR, codigos: ['LAP-2'] }),
+      producto({
+        nombre: 'Lápiz del 2',
+        categoryId: CATEGORIA_ESCOLAR,
+        codigos: ['LAP-2'],
+        stockMinimo: 12.5,
+      }),
       contextoDueno,
     );
     await crearProducto(cliente, producto({ nombre: 'Cuaderno profesional' }), contextoDueno);
@@ -257,6 +262,9 @@ describe('listado', () => {
     expect(todos[1]?.categoria).toBe('Escolar');
     expect(todos[1]?.unidadAbreviatura).toBe('pza');
     expect(todos[1]?.stock).toBe('0');
+    // El punto de reposición viaja en la fila: sin él, el formulario de edición lo
+    // pondría en 0 y lo borraría al guardar cualquier otra cosa.
+    expect(todos[1]?.stockMinimo).toBe('12.500');
 
     const porNombre = await listarProductos(cliente, 'lápiz');
     expect(porNombre.map((fila) => fila.id)).toEqual([lapiz.id]);
@@ -330,6 +338,37 @@ describe('edición', () => {
       [creado.id],
     );
     expect(String(fila.costo_minor)).toBe('400');
+  });
+
+  test('el punto de reposición sobrevive a una edición que no lo toca', async () => {
+    // El recorrido real de la pantalla: `listarProductos()` llena el formulario y el
+    // formulario manda de vuelta lo que tiene. Cuando el stock mínimo no venía en la
+    // fila, el campo arrancaba en 0 y editar el nombre de un producto **borraba** el
+    // punto de reposición. Lo destapó la pantalla, no una prueba.
+    const creado = await crearProducto(cliente, producto({ stockMinimo: 12.5 }), contextoDueno);
+
+    const [fila] = await listarProductos(cliente, 'Lápiz');
+    expect(fila?.stockMinimo).toBe('12.500');
+
+    await actualizarProducto(cliente, creado.id, { nombre: 'Lápiz Mirado 3' }, contextoDueno);
+
+    const despues = await unaFila<{ stock_minimo: unknown }>(
+      `SELECT stock_minimo FROM products WHERE id = $1`,
+      [creado.id],
+    );
+    expect(Number(despues.stock_minimo)).toBe(12.5);
+  });
+
+  test('el punto de reposición se puede cambiar', async () => {
+    const creado = await crearProducto(cliente, producto({ stockMinimo: 3 }), contextoDueno);
+
+    await actualizarProducto(cliente, creado.id, { stockMinimo: 8.25 }, contextoDueno);
+
+    const despues = await unaFila<{ stock_minimo: unknown }>(
+      `SELECT stock_minimo FROM products WHERE id = $1`,
+      [creado.id],
+    );
+    expect(Number(despues.stock_minimo)).toBe(8.25);
   });
 
   test('editar un producto de otra persona sin permiso no lo toca', async () => {

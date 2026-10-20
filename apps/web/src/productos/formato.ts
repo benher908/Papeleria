@@ -31,6 +31,19 @@ export function intentarCentavos(texto: string): bigint | null {
 }
 
 /**
+ * Una cantidad de la base (`24.000`, que es como la devuelve `numeric`) al texto que va
+ * dentro de un `<input>`: `24`. Sin ceros de relleno y **con punto**, no con coma: el
+ * formulario vuelve a parsear esto, y una coma sería otro número.
+ *
+ * La lista no usa ésta: ahí sí se quiere el formato del país (`1,200`). Son dos trabajos
+ * distintos y por eso son dos funciones.
+ */
+export function cantidadParaEditar(texto: string): string {
+  const numero = Number(texto);
+  return Number.isFinite(numero) ? numero.toString() : '0';
+}
+
+/**
  * Margen sobre el precio de venta, en por ciento con dos decimales.
  *
  * Sobre el precio y no sobre el costo porque es lo que el dueño compara cuando ve

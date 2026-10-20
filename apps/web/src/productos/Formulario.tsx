@@ -15,7 +15,13 @@
 import { useId, useMemo, useState } from 'react';
 
 import { Boton, Campo, Entrada, Seleccion } from '../componentes/ui';
-import { intentarCentavos, margenSobreVenta, pesos, pesosParaEditar } from './formato';
+import {
+  cantidadParaEditar,
+  intentarCentavos,
+  margenSobreVenta,
+  pesos,
+  pesosParaEditar,
+} from './formato';
 
 export interface OpcionCatalogo {
   readonly id: string;
@@ -45,6 +51,8 @@ export interface ProductoParaEditar {
   readonly categoria: string | null;
   readonly ubicacion: string | null;
   readonly unidad: string;
+  /** `numeric` de la base: `'24.000'`. Se convierte con `cantidadParaEditar()`. */
+  readonly stockMinimo: string;
 }
 
 export interface PropsFormulario {
@@ -95,7 +103,11 @@ export function Formulario({
   );
   const [modo, setModo] = useState<'interno' | 'manual'>('interno');
   const [codigo, setCodigo] = useState('');
-  const [stockTexto, setStockTexto] = useState('0');
+  // Se arranca con el valor que ya tenía el producto. Estuvo en '0' fijo, y eso
+  // significaba que editar el nombre de un producto le borraba el punto de reposición.
+  const [stockTexto, setStockTexto] = useState(
+    inicial === undefined ? '0' : cantidadParaEditar(inicial.stockMinimo),
+  );
   const [ubicacion, setUbicacion] = useState(inicial?.ubicacion ?? '');
   const [errores, setErrores] = useState<readonly string[]>([]);
 

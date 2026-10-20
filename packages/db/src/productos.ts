@@ -99,6 +99,15 @@ export interface FilaProducto {
   readonly unidad: string;
   readonly unidadAbreviatura: string;
   readonly stock: string;
+  /**
+   * El punto de reposición: no es el stock que hay, es el aviso de «ya casi no queda».
+   *
+   * Va en la fila porque el formulario lo edita: si no viniera, al editar cualquier otra
+   * cosa el formulario mandaría 0 y **borraría en silencio** lo que el dueño había
+   * puesto. Se descubrió usando la pantalla, no las pruebas — que miraban la lista, no
+   * el ida y vuelta.
+   */
+  readonly stockMinimo: string;
   readonly codigo: string | null;
   readonly ubicacion: string | null;
   readonly isActivo: boolean;
@@ -373,6 +382,7 @@ export async function listarProductos(
     codigo: string | null;
     ubicacion: string | null;
     is_activo: boolean;
+    stock_minimo: unknown;
   }>(
     `SELECT p.id, p.nombre, p.sku, p.precio_minor, p.costo_minor,
             c.nombre AS categoria, u.nombre AS unidad, u.abreviatura,
@@ -380,7 +390,7 @@ export async function listarProductos(
             (SELECT b.codigo FROM product_barcodes b
               WHERE b.product_id = p.id AND b.deleted_at IS NULL
               ORDER BY b.es_primario DESC, b.creado_at ASC LIMIT 1) AS codigo,
-            p.ubicacion, p.is_activo
+            p.ubicacion, p.is_activo, p.stock_minimo
        FROM products p
        JOIN units u ON u.id = p.unit_id
        LEFT JOIN categories c ON c.id = p.category_id
@@ -403,6 +413,7 @@ export async function listarProductos(
     unidad: fila.unidad,
     unidadAbreviatura: fila.abreviatura,
     stock: String(fila.stock),
+    stockMinimo: String(fila.stock_minimo),
     codigo: fila.codigo,
     ubicacion: fila.ubicacion,
     isActivo: fila.is_activo,

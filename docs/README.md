@@ -5,7 +5,7 @@ Documentación de diseño. Un solo desarrollador, un solo usuario (el dueño), c
 > **Estado:** el diseño está completo. Además del núcleo, ya están escritos el esquema y
 > las migraciones ([`packages/db`](../packages/db)), la base local en el navegador, su
 > entrada, el lector HID y la pantalla de catálogo ([`apps/web`](../apps/web)), que además
-> es una **PWA instalable** que abre sin internet. `pnpm test` corre **345 pruebas**
+> es una **PWA instalable** que abre sin internet. `pnpm test` corre **347 pruebas**
 > sobre dinero, códigos de barras, precios, totales, migraciones, la transacción que ata
 > cada cambio a su evento, las políticas de autorización, el login local, el lector de
 > códigos y el alta/edición de productos.

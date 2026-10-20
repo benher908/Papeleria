@@ -17,7 +17,7 @@ celular. También es el punto de venta.
 | Diseño completo (12 documentos) | ✅ terminado — [`docs/`](docs/README.md) |
 | Núcleo: dinero, códigos de barras, precios, totales, autorización, contraseñas | ✅ **escrito y con 195 pruebas en verde** |
 | Probador de cámara y códigos (`tools/prueba-camara`) | ✅ **listo — falta probarlo en tu celular** |
-| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 150 pruebas en verde** (152 con PostgreSQL 16) — mismo esquema, línea por línea, en PGlite y en PostgreSQL 16 |
+| Base de datos: esquema y migraciones (`packages/db`) | ✅ **escrito y con 173 pruebas en verde** — las mismas contra PGlite y contra PostgreSQL 16, con el mismo esquema línea por línea |
 | Motor de ventas: `emitirEvento()` + `outbox` | ✅ **estado, evento y auditoría en una sola transacción** — ni una venta a medias, ni un folio gastado |
 | Autorización: `evaluar()` + las 30 reglas sembradas | ✅ **la tabla de casos del doc 06 §9 en verde, contra las reglas reales** |
 | Base local en el navegador (`apps/web`) | ✅ **funcionando** — PGlite en un Web Worker, verificado con **dos pestañas abiertas** |
@@ -25,7 +25,8 @@ celular. También es el punto de venta.
 | Lector de códigos de barras HID (`0.8`) | ✅ **funcionando** — un lector de $25 se presenta como teclado; el panel lo simula y distingue a una persona de una máquina |
 | App instalable y sin internet (`0.10`) | ✅ **PWA**: se instala como app y abre con el servidor apagado — verificado en un navegador real |
 | Catálogo de productos (`1.1`) | 🟨 **en curso** — alta, listado con búsqueda y edición funcionan de punta a punta; faltan categorías, unidades y proveedores |
-| POS, etiquetas, API | ⬜ no empezado (el diseño está listo) |
+| POS y caja (`F2`) | 🟨 **en curso y usable** — abrir turno, vender con escáner o búsqueda, cambio sugerido, ticket de 58 mm, movimientos de cajón, arqueo y corte Z. Faltan favoritos, venta libre, devoluciones con interfaz y step-up con PIN |
+| Etiquetas, API y respaldos | ⬜ no empezado (el diseño está listo; el respaldo es F4) |
 
 Lo que ya funciona hoy, en `packages/core`: aritmética de dinero en centavos
 (`bigint`, sin errores de punto flotante), dígito verificador EAN-13, generación
@@ -194,7 +195,7 @@ herramienta) en [`docs/11 §1`](docs/11-despliegue-gratuito.md) y
 
 ### 2. Base de datos: esquema y migraciones — ✅ hecho
 
-`packages/db` ya tiene las migraciones `0001`–`0006` y 150 pruebas en verde. El
+`packages/db` ya tiene las migraciones `0001`–`0008` y 173 pruebas en verde. El
 esquema está descrito en `docs/02` y `docs/06`, y la regla que lo sostiene todo es
 una: **el mismo archivo .sql corre en PGlite (el navegador) y en PostgreSQL 16 (el
 servidor)**. No es una aspiración: hay una prueba que aplica las migraciones a los
@@ -267,8 +268,21 @@ Lo que sigue, en orden ([`docs/10`](docs/10-roadmap.md), fase F0):
   CRUD de categorías, unidades y proveedores. La pantalla destapó un fallo que las
   pruebas no veían: al editar cualquier otra cosa, el «stock mínimo» se iba a 0, porque
   la lista no traía ese dato y el formulario arrancaba en cero. Corregido y con prueba.
+- **F2 — POS y caja.** 🟨 **En curso y usable**, verificado en un navegador real:
+  abrir turno con fondo, escanear o buscar, juntar cantidades, cobrar en efectivo con
+  cambio sugerido, imprimir el ticket de 58 mm con folio y IVA incluido, registrar un
+  retiro, arquear y cerrar con el corte Z. La venta escribe venta, líneas, pagos,
+  movimiento de stock, evento y auditoría en **una sola transacción**, y el esperado del
+  cajón se calcula con `monto − cambio` **dentro** del cierre, nunca con lo que diga la
+  pantalla. El ledger dejó el stock en negativo en la primera venta de prueba: eso es
+  correcto —no había recepción de mercancía— y es la deuda visible que resuelve F3.
+  Faltan favoritos y venta libre (2.9), devoluciones con interfaz (2.10), el resto de
+  atajos (2.7) y el PIN de step-up (F6): hoy una venta de más de $1 000 después de las
+  20:00 o un descuento de más del 10 % se rechazan con un mensaje claro en vez de pedir
+  autorización. Ver [`docs/05`](docs/05-pos-y-caja.md) y [`README` de la web](apps/web/README.md).
 
-Sólo queda la prueba de cámara (0.9), que necesita tu celular.
+Quedan la prueba de cámara (0.9), que necesita tu celular, y los pendientes de F2
+anotados arriba.
 
 ### 3. La caja (POS) primero, el inventario después
 

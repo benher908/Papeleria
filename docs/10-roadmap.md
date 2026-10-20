@@ -64,7 +64,7 @@ gantt
 |---|-----------|------------------------|--------|
 | 0.1 | Monorepo con pnpm workspaces | `pnpm -r build` compila los 3 paquetes | 🟡 workspaces listos y **`apps/web` creado**; falta `apps/api` |
 | 0.2 | `packages/core` con dominio y dinero | `bigint` en centavos + `roundHalfUp` con tests | ✅ **195 pruebas en verde** (+ EAN-13, precios y totales; desde 0.5: ULID, UUID v7 y el reloj lógico híbrido; desde 0.6: `evaluar()` y la gramática de condiciones; desde 0.7: las reglas puras de contraseña y sesión; desde 0.8: el lector HID) |
-| 0.3 | `packages/db/migrations/0001..0003` | Se aplican en **PGlite y Postgres**, verificado en CI | ✅ **38 pruebas en verde** (hoy 129, con la 0004, la 0005, la 0006 y el login), y verificado también a mano contra un PostgreSQL 16.14 real: los dos motores acaban con el **mismo esquema, línea por línea** (tablas, columnas con tipo y `NOT NULL`, índices, restricciones, funciones y disparadores). El flujo de CI levanta ese mismo Postgres; falta empujarlo a GitHub para que corra solo |
+| 0.3 | `packages/db/migrations/0001..0003` | Se aplican en **PGlite y Postgres**, verificado en CI | ✅ **38 pruebas en verde** (hoy **173**, con la 0004–0008 y el login), y verificado también a mano contra un PostgreSQL 16.14 real: los dos motores acaban con el **mismo esquema, línea por línea** (tablas, columnas con tipo y `NOT NULL`, índices, restricciones, funciones y disparadores). El flujo de CI levanta ese mismo Postgres; falta empujarlo a GitHub para que corra solo |
 | 0.4 | **PGlite en Web Worker** con cliente tipado | Dos pestañas abiertas **no** corrompen la BD | ✅ **Verificado en un navegador real, con dos pestañas abiertas.** Una es *líder* y la otra *seguidora*; ninguna consulta se entrelaza. En la prueba de estrés —las dos peleando por la misma fila— **261 transacciones en 4 s**, `contador == marcas` exacto y **0 filas perdidas**. Y al cerrar la pestaña líder, otra toma el relevo sin que se note. De paso apareció la restricción que más se siente: en el modo por defecto PGlite **espera el volcado a disco después de cada consulta** (3 transacciones/s frente a 64 con `relaxedDurability`). Se usa `relaxedDurability` y se llama a `sincronizar()` tras las escrituras que no se pueden perder — con una corrección que llegó en 0.7: en modo relajado `syncToFs()` **no espera** el volcado (y lo descarta si ya hay uno en marcha), así que `sincronizar()` reduce la ventana pero no la cierra. Está documentado como deuda con su remedio en [`apps/web/README.md`](../apps/web/README.md) |
 | 0.5 | `emitirEvento()` + `outbox` | Una venta de prueba escribe estado + evento en una transacción | ✅ **Hecho y verificado en cuatro sitios.** La venta de prueba escribe venta, líneas, movimiento de stock, evento en la cola y auditoría; forzando un fallo **después** de escribir el estado, la base queda idéntica, contadores incluidos (ni un folio gastado, ni un hueco en `device_seq`). El HLC no retrocede aunque el reloj del PC se vaya a 2010. Probado contra **PGlite** y contra **PostgreSQL 16.14 real**, y a mano en el navegador (sección 4 del panel de diagnóstico). De paso apareció lo que el diseño daba por hecho y no existía: `device_counters`, `folio_counters` y `devices.codigo` (migración `0004_eventos.sql`) |
 | 0.6 | `evaluar()` (RBAC+ABAC) con un rol | Tabla de tests de políticas en verde | ✅ **Hecho, y la tabla del doc 06 §9 corre contra las reglas reales.** `evaluar()` es puro y sin IO (corre igual en la caja, en el celular y en el servidor); **`packages/db/src/autorizacion.ts`** es quien carga permisos, políticas y step-up de las tablas, dentro de la transacción del evento. Las **30 filas** de `0005_politicas.sql` cubren las 31 reglas del §5 (P20 y P23 son RBAC puro; P21 son dos permisos). Tres cosas que el diseño no tenía: el lado derecho de una comparación puede ser **otro campo** (sin eso P1 —"precio nuevo menor al costo"— no se puede escribir, y por eso 0002 no sembró nada); `gt_abs`, porque la diferencia de un arqueo puede ser faltante o sobrante; y un **catálogo cerrado de campos** validado al cargar, que lanza con el nombre mal escrito en vez de apagar una regla en silencio |
@@ -161,6 +161,12 @@ ahí en adelante).
 
 Ese es el momento en que el sistema deja de ser una idea. **No sigas a F2 sin haberlo logrado con al menos 30 productos de tu catálogo real.**
 
+> **Nota de secuencia (octubre de 2026).** El hito de F1 se pospuso a propósito: se
+> validó el cobro con productos de demostración y se siguió con F2 porque vender es lo
+> urgente. No es gratis: antes de usar el sistema en producción siguen pendientes los
+> **30 productos reales** y **una etiqueta impresa que se lea**. La captura masiva
+> (1.10), las presentaciones (1.5) y las etiquetas (1.7–1.9) están en la lista.
+
 ### Trampas de F1
 
 | Trampa | Cómo evitarla |
@@ -190,6 +196,25 @@ Ese es el momento en que el sistema deja de ser una idea. **No sigas a F2 sin ha
 | 2.10 | Cancelación y devolución con motivo + step-up | Nada se borra: todo se registra |
 | 2.11 | `cash_movements` (retiros, gastos) | El arqueo cuadra incluyendo un retiro de $200 |
 | 2.12 | Corte Z imprimible | El corte del turno cuadra con el efectivo contado |
+
+**Hecho hasta ahora:** **2.1, 2.2, 2.4–2.6, 2.8, 2.11 y 2.12 funcionan de punta a punta y se
+verificaron en un navegador real**: abrir turno, escanear/buscar, cantidades, cobro en
+efectivo con cambio sugerido, ticket de 58 mm con folio e IVA incluido, movimientos de
+cajón, arqueo, cierre con nota obligatoria y corte Z. La venta y el cierre son
+transacciones únicas (venta, líneas, pagos, stock, evento y auditoría; o nada), y el
+esperado del cajón se recalcula dentro del cierre con `monto − cambio`.
+
+Lo que falta es honesto de decir: **2.3** cobra con **un solo método** en pantalla
+(el pago mixto está en la capa de datos y probado, pero la interfaz todavía no lo
+ofrece); **2.7** sólo tiene `F1`, `F2` y `Escape`; **2.9** (favoritos y venta libre) no
+empezó; **2.10** tiene la cancelación en la capa de datos con step-up, pero no la
+pantalla de devoluciones. Y el **PIN de step-up es F6**: sin él, las políticas que lo piden
+—descuento > 10 %, venta > $5 000, venta > $1 000 después de las 20:00, retiro > $500—
+se rechazan con un mensaje claro en vez de pedir autorización. Es una decisión
+deliberada: es preferible que la regla se cumpla de más a que se apague en silencio.
+
+En la base: **173 pruebas contra PostgreSQL 16** y **171 + 2 saltadas con PGlite** (12
+archivos; las dos que necesitan el motor real se saltan solas cuando no está).
 
 ### El hito real de F2
 
@@ -431,10 +456,9 @@ Si de todo el documento solo puedes ejecutar tres cosas:
 
 Y después: **la tarea 0.9** (la cámara), que es la única de F0 que falta.
 
-> 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 y 0.10 ya están hechas: `pnpm test` corre **347 pruebas** sobre
+> 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 y 0.10 ya están hechas: `pnpm test` corre **370 pruebas** sobre
 > dinero, EAN-13, precios, totales, ULID, UUID v7, reloj lógico, migraciones, esquema,
 > la transacción que ata cada cambio del negocio a su evento, las políticas del
 > doc 06 §9 contra las reglas sembradas, el login local (contraseña, sesión, rol de la
-> primera cuenta y vencimiento), el lector HID, los códigos internos (1 000 sin repetir)
-> y el catálogo de productos (alta, búsqueda y edición). Corre `pnpm test` una vez y verás
-> el punto de partida.
+> primera cuenta y vencimiento), el lector HID, los códigos internos (1 000 sin repetir),
+> el catálogo de productos (alta, búsqueda y edición) y la venta y el arqueo.

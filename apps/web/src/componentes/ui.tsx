@@ -12,6 +12,7 @@
  *     Así el modo claro/oscuro sigue siendo el de toda la app y no hay dos temas.
  */
 
+import { forwardRef } from 'react';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -51,19 +52,22 @@ export function Boton({ variante = 'primario', className, type = 'button', ...re
   );
 }
 
-export function Entrada({ className, ...resto }: InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      className={cx(
-        'w-full rounded-md border border-[var(--linea)] bg-[var(--fondo)] px-2.5 py-2 text-sm',
-        'text-[var(--texto)] outline-none placeholder:text-[var(--suave)]',
-        'focus:border-[var(--acento)] focus:ring-2 focus:ring-[var(--acento)]',
-        className,
-      )}
-      {...resto}
-    />
-  );
-}
+export const Entrada = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
+  function Entrada({ className, ...resto }, ref) {
+    return (
+      <input
+        ref={ref}
+        className={cx(
+          'w-full rounded-md border border-[var(--linea)] bg-[var(--fondo)] px-2.5 py-2 text-sm',
+          'text-[var(--texto)] outline-none placeholder:text-[var(--suave)]',
+          'focus:border-[var(--acento)] focus:ring-2 focus:ring-[var(--acento)]',
+          className,
+        )}
+        {...resto}
+      />
+    );
+  },
+);
 
 export function Seleccion({ className, ...resto }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (

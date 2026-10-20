@@ -324,7 +324,7 @@ Se guarda como un `payment`… no: se guarda en `cash_sessions.fondo_inicial_min
 -- Cálculo del esperado en cajón (efectivo). Ejecútalo al abrir el diálogo de cierre.
 SELECT
   cs.fondo_inicial_minor
-  + coalesce((SELECT sum(p.monto_minor + p.cambio_minor)   -- ⚠️ ver nota abajo
+  + coalesce((SELECT sum(p.monto_minor - p.cambio_minor)
               FROM payments p JOIN sales s ON s.id = p.sale_id
               WHERE s.cash_session_id = cs.id AND p.metodo = 'efectivo'
                 AND s.estado = 'completada'), 0)
@@ -333,6 +333,8 @@ SELECT
               WHERE s.cash_session_id = cs.id), 0)
   - coalesce((SELECT sum(cm.monto_minor) FROM cash_movements cm
               WHERE cm.cash_session_id = cs.id AND cm.tipo = 'retiro'), 0)
+  - coalesce((SELECT sum(cm.monto_minor) FROM cash_movements cm
+              WHERE cm.cash_session_id = cs.id AND cm.tipo = 'gasto'), 0)
   + coalesce((SELECT sum(cm.monto_minor) FROM cash_movements cm
               WHERE cm.cash_session_id = cs.id AND cm.tipo = 'ingreso'), 0)
   AS esperado_efectivo_minor
@@ -356,7 +358,7 @@ CREATE TABLE cash_movements (            -- retiros, gastos, ingresos que no son
 
 **Los retiros y gastos del cajón son obligatorios de tener.** El dueño saca $200 para comprar bolsas, o $1 000 de utilidad. Si el sistema no lo registra, el cierre siempre da diferencia negativa "inexplicable" y el arqueo se vuelve inútil. Con `cash_movements`, cada peso tiene explicación.
 
-**Política ABAC relacionada:** retiro de cajón > $500 → requiere PIN de step-up. Cierre con diferencia > $20 → requiere nota obligatoria. Ver [06](06-authz-rbac-abac.md).
+**Política ABAC relacionada:** retiro de cajón > $500 → requiere PIN de step-up. Cierre con diferencia > $50 → requiere nota obligatoria. Ver [06](06-authz-rbac-abac.md).
 
 ### Corte Z
 
@@ -442,20 +444,20 @@ export async function imprimirTicketESC_POS(port: SerialPort, lineas: Buffer[]) 
 
 ## 11. Checklist de este módulo
 
-- [ ] Turno de caja: apertura con fondo, cierre con arqueo, un turno por terminal a la vez
-- [ ] No se puede vender sin turno abierto (validado en la capa de casos de uso, no solo en la UI)
-- [ ] `cash_movements` para retiros, gastos e ingresos (sin esto el arqueo miente)
-- [ ] Arqueo calcula `monto − cambio` para efectivo, **no** `monto + cambio`
-- [ ] Cálculo de totales: centavos, `roundHalfUp`, IVA incluido despejado por línea
-- [ ] Diferencia de redondeo ajustada por línea, nunca en el total
-- [ ] Atajos `F1`–`F12` con `preventDefault` global en modo caja
+- [x] Turno de caja: apertura con fondo, cierre con arqueo, un turno por terminal a la vez
+- [x] No se puede vender sin turno abierto (validado en la capa de casos de uso, no solo en la UI)
+- [x] `cash_movements` para retiros, gastos e ingresos (sin esto el arqueo miente)
+- [x] Arqueo calcula `monto − cambio` para efectivo, **no** `monto + cambio`
+- [x] Cálculo de totales: centavos, `roundHalfUp`, IVA incluido despejado por línea
+- [x] Diferencia de redondeo ajustada por línea, nunca en el total
+- [ ] Atajos `F1`–`F12` con `preventDefault` global en modo caja — hoy sólo `F1`, `F2` y `Escape`
 - [ ] Buscador ordenado por **más vendidos** + alias de producto
 - [ ] Favoritos con los 12 productos más vendidos, refrescados semanalmente
-- [ ] Botones de denominaciones MXN + sugerencia de cambio desglosada
-- [ ] Pago mixto desde el día 1 (2+ filas en `payments`)
-- [ ] "Cobrar sin ticket" registra la venta igual
-- [ ] Ticket 58 mm con IVA **incluido**, folio visible y política de cambios configurable
-- [ ] Reimpresión auditada
-- [ ] Devoluciones y cancelaciones: nunca editar, siempre registrar un hecho nuevo
+- [x] Botones de denominaciones MXN + sugerencia de cambio desglosada
+- [ ] Pago mixto desde el día 1 (2+ filas en `payments`) — la capa de datos lo hace y está probada; la pantalla cobra con un método
+- [x] "Cobrar sin ticket" registra la venta igual
+- [x] Ticket 58 mm con IVA **incluido** y folio visible — falta la política de cambios configurable (se imprime el agradecimiento genérico)
+- [ ] Reimpresión auditada — `obtenerVenta()` existe; falta la pantalla y el evento de reimpresión
+- [ ] Devoluciones y cancelaciones: nunca editar, siempre registrar un hecho nuevo — la cancelación existe en la capa de datos con step-up; falta la interfaz
 - [ ] Venta libre (F4) en ≤ 5 segundos con cantidades predefinidas
-- [ ] RS-232/ESC-POS **no** en el MVP: `window.print()` primero
+- [x] RS-232/ESC-POS **no** en el MVP: `window.print()` primero

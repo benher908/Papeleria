@@ -5,9 +5,10 @@ navegador, con una sola instancia por origen, funcionando sin internet.
 
 Es una **PWA instalable**: se abre como app desde el escritorio o el celular y sigue
 funcionando sin red (ver [La app instalable](#la-app-instalable-pwa)). Hoy tiene la
-entrada, el **catálogo de productos** (alta, listado y edición, F1.1) y el panel de
-diagnóstico. El POS, el escaneo y las etiquetas llegan después; el diagnóstico vive
-aparte en `src/diagnostico/` para no mezclarlo con la interfaz de negocio.
+entrada, el **POS y la caja** (F2) y el **catálogo de productos** (alta, listado y
+edición, F1.1), además del panel de diagnóstico. El escaneo con el celular y las
+etiquetas llegan después; el diagnóstico vive aparte en `src/diagnostico/` para no
+mezclarlo con la interfaz de negocio.
 
 Al abrir por primera vez, la app pide **crear la cuenta de la dueña** (no hay servidor
 del que traerla) y después ya sólo pide la contraseña cuando la sesión de verdad venció.
@@ -353,8 +354,42 @@ Si la simulación llamara a la cola directamente no probaría nada de eso.
    el `Enter`. Es inevitable: hasta el cuarto carácter no se puede saber que es un lector,
    y consumir desde el primero rompería a una persona escribiendo. Con el foco fuera de
    cualquier campo, en cambio, la ráfaga no llega al DOM (evita "búsquedas fantasma"). En
-   F2 hay que decidir **una** cosa por campo —o el buscador usa el texto, o la cola usa el
-   evento— y esa decisión se toma en la caja, no aquí.
+   el POS el buscador **sí** recibe los caracteres, y además la cola entrega el código
+   completo: `agregarPorCodigo()` resuelve y limpia el campo. Es la decisión que F2 dejó
+   escrita: el campo se usa para teclear, la cola para vender.
+
+---
+
+## Vender y cerrar la caja (F2)
+
+La primera pestaña es **Vender**. El POS se queda montado al cambiar de pestaña: un
+carrito a medio armar y el turno abierto no se pierden por mirar el catálogo.
+
+1. **Abrir turno** con el fondo con el que arranca el cajón (no es una venta: es dinero
+   que ya estaba ahí).
+2. **Escanear** con el lector HID o **buscar** por nombre o código. Escanear dos veces el
+   mismo código suma dos piezas. `F2` enfoca el buscador; `F1` cobra; `Escape` vuelve.
+3. **Cobrar**: efectivo (con denominaciones y cambio sugerido), tarjeta o transferencia.
+   El cambio se calcula con lo recibido; el ticket muestra subtotal, IVA incluido y total.
+4. **Cerrar turno**: el sistema calcula el esperado (`fondo + efectivo − cambio −
+   retiros − gastos + ingresos + devoluciones`), se teclea lo contado y, si la diferencia
+   pasa de $50, la nota es obligatoria. Al cerrar queda el **corte Z** listo para imprimir.
+
+El esperado **nunca** se toma de la pantalla: se vuelve a calcular dentro de la
+transacción de cierre. Así, una pestaña vieja o un retiro recién registrado no pueden
+hacer que el arqueo diga otra cosa.
+
+Tampoco **bloquea vender sin stock**: el sistema no tiene todavía recepciones de
+mercancía (F3), así que el primer producto vendido queda en negativo. No es un error de
+la venta: es el ledger diciendo la verdad de que nunca se registró la entrada. En la
+pantalla de productos el stock se ve en negativo hasta que F3 exista.
+
+Lo que el POS **todavía no** hace, y se nota: favoritos y venta libre (2.9), devoluciones
+y cancelación con interfaz (2.10; la capa de datos ya las tiene), pago mixto en la
+pantalla y el PIN de step-up (F6). Sin PIN, las políticas que lo piden —descuento de más
+del 10 %, venta de más de $5 000, venta de más de $1 000 después de las 20:00— se
+rechazan con un mensaje claro en vez de pedir autorización. Está a propósito: es mejor
+que la regla se cumpla de más a que se apague sin que nadie lo note.
 
 ---
 
@@ -375,7 +410,9 @@ Si la simulación llamara a la cola directamente no probaría nada de eso.
 | `src/db/migraciones.ts` | Los `.sql` de `packages/db` incrustados en el bundle por Vite. |
 | `src/diagnostico/` | El panel: capas, migraciones, semillas, la prueba de dos pestañas y la de la transacción. Es una herramienta de desarrollo y sólo se llega a ella **con la sesión iniciada**. |
 | `src/diagnostico/outbox.ts` | La venta de prueba de la sección 4: la emite, la revienta y borra lo que dejó. |
-| `src/productos/` | La pantalla de catálogo (F1.1): lista con búsqueda, alta y edición. `App.tsx` monta React dentro de la sesión; `Formulario.tsx` y `Lista.tsx` son las dos vistas. |
+| `src/productos/` | El catálogo (F1.1): lista con búsqueda, alta y edición. `Formulario.tsx` y `Lista.tsx` son las dos vistas; `App.tsx` es el armazón de pestañas que monta el POS, el catálogo y el diagnóstico. |
+| `src/pos/PantallaVenta.tsx` | El POS (F2): turno, buscador/escáner, carrito, cobro, arqueo, movimientos de cajón y corte Z. Se monta oculto al cambiar de pestaña para no perder el carrito. |
+| `src/pos/Ticket.tsx` | El ticket de 58 mm y el corte Z, más el CSS de impresión que oculta el resto de la app al llamar a `window.print()`. |
 | `src/componentes/ui.tsx` | Los componentes base, al estilo shadcn/ui pero escritos a mano: botón, campo, entrada, selección, tarjeta y aviso. Sin Radix mientras no haya diálogos. |
 | `src/pwa.ts` | Registra el service worker y muestra el aviso de versión nueva. |
 | `sw/plantilla.js` | El service worker: precarga el build entero y sirve caché primero. `vite.config.ts` le inyecta la lista de archivos y la versión. |

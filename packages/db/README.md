@@ -12,6 +12,8 @@ migrations/
   0004_eventos.sql          device_counters, folio_counters y devices.codigo
   0005_politicas.sql        las 30 reglas de autorización, como datos
   0006_secuencias.sql       barcode_sequences: el código interno, reservado en la base
+  0007_caja.sql             cash_movements + un solo turno abierto por terminal
+  0008_retiros_sin_step_up_por_defecto.sql   turnos:retiros deja de ser sensible
 src/
   runner.ts                 aplica las migraciones y detecta divergencias
   archivos.ts               lee los .sql desde disco (sólo Node)
@@ -20,8 +22,12 @@ src/
   contadores.ts             device_seq, HLC y folio local: sin huecos y sin repetir
   eventos.ts                emitirEvento(): estado + evento + auditoría en una transacción
   autorizacion.ts           carga permisos, políticas y step-up, y llama a evaluar()
+  obligaciones.ts           convierte las obligaciones de la política en reglas cumplibles
   auth.ts                   argon2id, dispositivos y sesiones: crear cuenta, entrar, verificar, salir
   secuencias.ts             el código interno EAN-13: reservado en la base, nunca en el navegador
+  productos.ts              catálogo: alta, edición, búsqueda y producto para vender
+  ventas.ts                 la venta completa: folio, líneas, pagos, stock y evento
+  caja.ts                   abrir/cerrar turno, arqueo y movimientos de cajón
 ```
 
 ## Uso
@@ -248,6 +254,81 @@ ajeno se rechaza nombrando al dueño, y que la edición también deja su evento.
 fallo de la pantalla, también que **el punto de reposición sobrevive** a una edición que
 no lo toca.
 
+## `ventas.ts`: la venta completa
+
+Una venta escribe **todo** dentro de la transacción del evento: folio local, `sales`,
+`sale_lines`, `payments`, los movimientos negativos del ledger de stock y el evento del
+outbox. El precio y el costo se leen del catálogo **en ese instante** y se congelan en la
+línea; el cambio se guarda en el pago en efectivo, nunca en la venta.
+
+```ts
+import { registrarVenta, METODOS_PAGO } from '@papeleria/db';
+
+const venta = await registrarVenta(
+  comoClienteTransaccional(base),
+  {
+    lineas: [{ productoId, qty: 1000 }],
+    pagos: [{ metodo: 'efectivo', montoMinor: 20000n }],
+  },
+  { usuarioId, dispositivoId },
+);
+// venta.folioLocal === 'C1-000001', venta.cambioMinor === 15500n
+```
+
+| Decisión | Por qué |
+|---|---|
+| El precio **no** lo manda la pantalla | `registrarVenta` lo resuelve de `products` dentro de la transacción; la interfaz sólo manda producto y cantidad. Así un carrito viejo no puede cobrar un precio que la base ya no tiene |
+| El folio se pide **dentro** de la transacción | Si la venta falla después, el folio se revierte y no queda un hueco que parezca una venta borrada |
+| El cambio se descuenta del efectivo | `payments.monto_minor − cambio_minor` es lo que entró al cajón. Guardarlo al revés (o sumarlo) descuadra todos los cierres (`docs/05 §6`) |
+| El stock se mueve por el **ledger** | La venta inserta en `stock_movements`; el disparador actualiza `stock_levels`. Vender no toca la caché a mano: si hubiera dos caminos, uno se olvidaría |
+| La cancelación no borra nada | `cancelarVenta()` marca la venta y devuelve el stock con `motivo='error_captura'`; los pagos se conservan y la venta cancelada no entra al arqueo. Pedir `ventas:cancelar` exige step-up (P8) |
+| La clave de idempotencia evita el doble cobro | Un reintento con la misma clave devuelve la venta existente en vez de crear otra |
+
+`ventas.test.ts` (12 pruebas) cubre totales con IVA incluido, folio, tres escaneos que
+suman tres piezas, pago mixto, pago insuficiente, venta sin turno, descuento que exige
+step-up **sin gastar folio ni stock**, idempotencia, búsqueda por código y cancelación
+con y sin autorización.
+
+## `caja.ts`: turnos, arqueo y movimientos
+
+`abrirTurno()` y `cerrarTurno()` son transacciones con evento; `cash_movements` registra
+retiros, gastos e ingresos **con concepto obligatorio**. La migración `0007_caja.sql`
+añade un índice único parcial que impide dos turnos abiertos en la misma terminal.
+
+El esperado del cajón se calcula **siempre dentro del cierre**, no se acepta desde la
+pantalla:
+
+```text
+fondo + ventas en efectivo − devoluciones − retiros − gastos + ingresos
+```
+
+`cerrarTurno()` devuelve `esperado`, `contado` y `diferencia`; si `|diferencia| > $50`,
+la política P17 exige una nota y el cierre se rechaza sin ella. El corte Z se imprime
+desde la pantalla con esos datos.
+
+La migración `0008` quita `es_sensible` a `turnos:retiros`: la sensibilidad global pedía
+step-up para **cualquier** retiro, incluso uno de $1, y la regla real está en el umbral
+de P14 (> $500) y P15 (> $1 000 o más de tres retiros en el turno). Las dos siguen
+pidiendo step-up; lo que se quitó fue el bloqueo indiscriminado.
+
+`caja.test.ts` (9 pruebas) cubre el arqueo con `monto − cambio`, un retiro de $200, la
+nota obligatoria, el cierre doble, el turno único por terminal y el umbral de retiro.
+
+## `obligaciones.ts`: lo que la política pide, cumplido o rechazado
+
+`evaluar()` devuelve obligaciones (`step_up`, `motivo_obligatorio`, `notificar_dueno`,
+`marcar_para_revision`) y **no** las ejecuta: es una función pura. `exigirObligaciones()`
+las traduce a la operación:
+
+- `motivo_obligatorio` → sin nota, la operación se rechaza.
+- `step_up` → hoy se rechaza con un mensaje claro, porque el PIN es F6. Es deliberado:
+  apagar la obligación permitiría un descuento del 20 % sin que nadie lo autorice.
+- `notificar_dueno` y `marcar_para_revision` → no bloquean; se registrarán cuando exista
+  el canal de notificaciones.
+
+Las ventas y la caja comparten esta función, para que la regla se cumpla igual en los dos
+caminos.
+
 ## Lo que el runner garantiza
 
 | Garantía | Por qué importa |
@@ -278,8 +359,8 @@ docker rm -f papeleria-pruebas-pg
 > la que se conecta. Con el puerto cambiado, es imposible que le pegue al de verdad.
 
 Sin `DATABASE_URL_PRUEBAS` las dos pruebas que necesitan el motor real se **saltan**
-(aparecen como `skipped`); el resto corre igual contra PGlite. Son **152 pruebas con el
-PostgreSQL real** y **150 + 2 saltadas con sólo PGlite**.
+(aparecen como `skipped`); el resto corre igual contra PGlite. Son **173 pruebas con el
+PostgreSQL real** y **171 + 2 saltadas con sólo PGlite**.
 
 El test levanta un PGlite limpio, aplica las migraciones, hace lo mismo en el
 Postgres, y compara los dos catálogos línea a línea (tablas, columnas con su tipo

@@ -420,6 +420,81 @@ export async function listarProductos(
   }));
 }
 
+/**
+ * Un producto por su código exacto, listo para el carrito del POS (F2.2).
+ *
+ * Devuelve también la presentación y el factor si el código pertenece a un paquete
+ * o una caja: escanear el código de la caja de 12 no puede vender una pieza. El
+ * precio de la presentación base se toma de `products.precio_minor`, porque es el
+ * que edita el formulario; las demás presentaciones usan el suyo (F1.5).
+ *
+ * `null` significa "ese código no está dado de alta". La pantalla lo dice; no
+ * inventa un producto ni busca por aproximación: un escaneo es una identidad.
+ */
+export interface ProductoParaVender {
+  readonly id: string;
+  readonly nombre: string;
+  readonly precioMinor: string;
+  readonly costoMinor: string;
+  readonly tracksStock: boolean;
+  readonly presentacionId: string | null;
+  readonly factor: string;
+  readonly stock: string;
+  readonly unidadAbreviatura: string;
+}
+
+export async function buscarProductoPorCodigo(
+  cliente: ClienteSql,
+  codigo: string,
+): Promise<ProductoParaVender | null> {
+  const { rows } = await cliente.query<{
+    id: string;
+    nombre: string;
+    precio_minor: unknown;
+    costo_minor: unknown;
+    tracks_stock: boolean;
+    presentacion_id: string | null;
+    factor: unknown;
+    precio_presentacion: unknown;
+    stock: unknown;
+    abreviatura: string;
+  }>(
+    `SELECT p.id, p.nombre, p.precio_minor, p.costo_minor, p.tracks_stock,
+            COALESCE(b.presentacion_id, base.id) AS presentacion_id,
+            COALESCE(elegida.factor, base.factor, 1) AS factor,
+            CASE WHEN elegida.id IS NULL OR elegida.is_base
+                 THEN p.precio_minor
+                 ELSE elegida.precio_minor END AS precio_presentacion,
+            COALESCE(sl.qty_base, 0) AS stock,
+            u.abreviatura
+       FROM product_barcodes b
+       JOIN products p ON p.id = b.product_id AND p.deleted_at IS NULL AND p.is_activo
+       JOIN units u ON u.id = p.unit_id
+       LEFT JOIN product_presentations base
+              ON base.product_id = p.id AND base.is_base AND base.is_activo
+       LEFT JOIN product_presentations elegida ON elegida.id = b.presentacion_id
+       LEFT JOIN stock_levels sl ON sl.product_id = p.id
+      WHERE b.codigo = $1 AND b.deleted_at IS NULL
+      LIMIT 1`,
+    [codigo.trim()],
+  );
+
+  const fila = rows[0];
+  if (fila === undefined) return null;
+
+  return {
+    id: fila.id,
+    nombre: fila.nombre,
+    precioMinor: String(fila.precio_presentacion),
+    costoMinor: String(fila.costo_minor),
+    tracksStock: fila.tracks_stock,
+    presentacionId: fila.presentacion_id,
+    factor: String(fila.factor),
+    stock: String(fila.stock),
+    unidadAbreviatura: fila.abreviatura,
+  };
+}
+
 export async function listarCategorias(
   cliente: ClienteSql,
 ): Promise<Array<{ id: string; nombre: string }>> {

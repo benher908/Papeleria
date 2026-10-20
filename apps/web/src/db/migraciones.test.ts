@@ -32,6 +32,8 @@ describe('migraciones en el navegador', () => {
       '0004_eventos.sql',
       '0005_politicas.sql',
       '0006_secuencias.sql',
+      '0007_caja.sql',
+      '0008_retiros_sin_step_up_por_defecto.sql',
     ]);
   });
 });

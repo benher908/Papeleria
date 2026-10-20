@@ -56,7 +56,7 @@ describe('los dos caminos producen lo mismo', () => {
     expect(desdeMemoria).toEqual(desdeDisco);
   });
 
-  test('las seis migraciones actuales, con su hash', async () => {
+  test('las ocho migraciones actuales, con su hash', async () => {
     const migraciones = await cargarMigraciones(DIR_MIGRACIONES);
 
     expect(migraciones.map((m) => m.nombre)).toEqual([
@@ -66,6 +66,8 @@ describe('los dos caminos producen lo mismo', () => {
       '0004_eventos.sql',
       '0005_politicas.sql',
       '0006_secuencias.sql',
+      '0007_caja.sql',
+      '0008_retiros_sin_step_up_por_defecto.sql',
     ]);
     for (const migracion of migraciones) {
       expect(migracion.hash).toMatch(/^[0-9a-f]{64}$/);

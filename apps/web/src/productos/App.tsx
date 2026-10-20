@@ -1,9 +1,10 @@
 /**
- * La pantalla de productos (F1.1).
+ * La pantalla de la app (F1.1 y F2).
  *
  * Monta React dentro de la sesión que ya existía: la barra y el formulario de entrada
  * siguen en DOM a mano porque están verificados y no hacen falta aquí. Este árbol es
- * el que crece: el catálogo primero, y después las ventas, los conteos y las etiquetas.
+ * el que crece: el POS primero, después el catálogo, y más adelante los conteos y las
+ * etiquetas.
  *
  * ── Decisiones que se ven en el código ────────────────────────────────────────
  *
@@ -42,6 +43,7 @@ import type { BaseLocal } from '../db/baseLocal';
 import { comoClienteTransaccional } from '../db/cliente';
 import { montarPanel } from '../diagnostico/panel';
 import type { ColaEscaneo } from '../escaneo/cola';
+import { PantallaVenta } from '../pos/PantallaVenta';
 import { Formulario, type OpcionCatalogo, type ValoresFormulario } from './Formulario';
 import { pesos } from './formato';
 import { Lista } from './Lista';
@@ -53,7 +55,7 @@ export interface PropsApp {
 }
 
 type Vista = { readonly tipo: 'lista' } | { readonly tipo: 'nuevo' } | { readonly tipo: 'editar'; readonly fila: FilaProducto };
-type Pestana = 'productos' | 'diagnostico';
+type Pestana = 'vender' | 'productos' | 'diagnostico';
 
 interface Exito {
   readonly texto: string;
@@ -72,7 +74,7 @@ function mensajeDe(causa: unknown): string {
 }
 
 export function AppProductos({ base, sesion, cola }: PropsApp) {
-  const [pestana, setPestana] = useState<Pestana>('productos');
+  const [pestana, setPestana] = useState<Pestana>('vender');
   const [vista, setVista] = useState<Vista>({ tipo: 'lista' });
 
   const [filtro, setFiltro] = useState('');
@@ -141,6 +143,13 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
     if (nodo === null) return;
     void montarPanel(nodo, cola);
   }, [cola]);
+
+  // Al volver a Productos se relee la lista: una venta en el POS cambió el stock y la
+  // lista se quedó montada mientras tanto. No hay caché que invalidar; se vuelve a
+  // preguntar a la base, que es barata.
+  useEffect(() => {
+    if (pestana === 'productos') setVersion((n) => n + 1);
+  }, [pestana]);
 
   async function guardar(valores: ValoresFormulario): Promise<void> {
     setGuardando(true);
@@ -228,10 +237,11 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
 
   return (
     <>
-      <div className="mx-auto max-w-5xl px-5 pt-4">
+      <div className="mx-auto max-w-6xl px-5 pt-4">
         <nav className="flex gap-1 border-b border-[var(--linea)]" aria-label="Secciones">
           {(
             [
+              ['vender', 'Vender'],
               ['productos', 'Productos'],
               ['diagnostico', 'Diagnóstico'],
             ] as const
@@ -256,6 +266,12 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
       {/* El panel se queda montado: sólo se esconde. */}
       <div hidden={pestana !== 'diagnostico'}>
         <div ref={panelRef} />
+      </div>
+
+      {/* El POS también se queda montado: cambiar de pestaña no puede vaciar un
+          carrito a medio armar ni perder el turno que se acaba de abrir. */}
+      <div hidden={pestana !== 'vender'} className="mx-auto max-w-6xl px-5 py-6">
+        <PantallaVenta base={base} sesion={sesion} cola={cola} />
       </div>
 
       <div hidden={pestana !== 'productos'} className="mx-auto max-w-5xl px-5 py-6">

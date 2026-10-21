@@ -31,6 +31,8 @@ export * from './secuencias';
 export * from './productos';
 export * from './caja';
 export * from './ventas';
+export * from './inventario';
+export * from './reportes';
 export * from './obligaciones';
 export * from './eventos';
 export * from './autorizacion';

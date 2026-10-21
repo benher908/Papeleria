@@ -364,6 +364,35 @@ Si la simulación llamara a la cola directamente no probaría nada de eso.
 
 ---
 
+## Catálogo, importación y ajustes (F1)
+
+La pestaña **Productos** da de alta y edita el catálogo. El formulario pide lo mínimo
+—nombre y precio— y deja opcionales categoría, proveedor, costo, SKU, ubicación y stock
+mínimo. El precio se captura con IVA incluido y el margen se calcula sobre la venta.
+
+La pestaña **Gestión** administra categorías y proveedores. Al crear uno, el formulario de
+producto recarga sus opciones sin reiniciar la app; el proveedor se asigna desde el mismo
+formulario. Las unidades siguen siendo semillas: su CRUD es lo que falta de F1.1.
+
+**Importar CSV** está en la lista de productos. Acepta coma, punto y coma o tabulador,
+campos entre comillas, BOM y encabezados con alias. Las reglas que conviene saber:
+
+- Si una fila falla, **no se importa ninguna**. El lote entero es una transacción
+  (`crearProductosLote()`); la prueba cubre el alta completa, la reversión y el código
+  duplicado.
+- Un `codigo` vacío genera el EAN interno con prefijo `2`. Un código repetido o inválido
+  bloquea el lote y se reporta con su número de fila.
+- La categoría y la unidad deben existir de antemano; un nombre desconocido no se inventa.
+- El precio puede venir con `$`, comas o punto decimal; se convierte a centavos.
+
+La pestaña **Ajustes** guarda nombre del negocio, RFC, dirección y teléfono en `settings`.
+Son datos de configuración, no eventos de negocio, así que no pasan por `emitirEvento()`;
+se escriben en una sola sentencia para no dejar media configuración vieja. El ticket y el
+corte Z los toman de ahí, y el POS recarga el encabezado al guardar sin exigir recargar el
+navegador.
+
+---
+
 ## Vender y cerrar la caja (F2)
 
 La primera pestaña es **Vender**. El POS se queda montado al cambiar de pestaña: un
@@ -373,10 +402,14 @@ carrito a medio armar y el turno abierto no se pierden por mirar el catálogo.
    que ya estaba ahí).
 2. **Escanear** con el lector HID o **buscar** por nombre o código. Escanear dos veces el
    mismo código suma dos piezas. `F2` enfoca el buscador; `F1` cobra; `Escape` vuelve.
-3. **Cobrar**: efectivo (con denominaciones y cambio sugerido), tarjeta, transferencia o
+3. **Descontar** si hace falta: se teclea el **importe** que se rebaja (no un porcentaje),
+   se reparte entre las líneas sin perder centavos y se muestra el porcentaje equivalente.
+   Un descuento de más del 10 % pide la contraseña; arriba de 30 % o $200 pide además el
+   motivo. El total nunca baja de cero.
+4. **Cobrar**: efectivo (con denominaciones y cambio sugerido), tarjeta, transferencia o
    vale. Se pueden combinar varios métodos en la misma venta; el efectivo es la única
-   fuente de cambio. El ticket muestra subtotal, IVA incluido y total.
-4. **Cerrar turno**: el sistema calcula el esperado (`fondo + efectivo − cambio −
+   fuente de cambio. El ticket muestra importe, IVA incluido, descuento y total.
+5. **Cerrar turno**: el sistema calcula el esperado (`fondo + efectivo − cambio −
    retiros − gastos + ingresos + devoluciones`), se teclea lo contado y, si la diferencia
    pasa de $50, la nota es obligatoria. Al cerrar queda el **corte Z** listo para imprimir.
    El mismo panel lista las ventas del turno y permite **cancelar** una con motivo y
@@ -391,9 +424,9 @@ mercancía (F3), así que el primer producto vendido queda en negativo. No es un
 la venta: es el ledger diciendo la verdad de que nunca se registró la entrada. En la
 pantalla de productos el stock se ve en negativo hasta que F3 exista.
 
-Lo que el POS **todavía no** hace, y se nota: descuentos desde la pantalla, devolución
-parcial (hoy se cancela la venta completa), historial de ventas con reimpresión, reportes,
-límite de intentos del step-up y el PIN/passkeys de F6. El step-up ya funciona con la
+Lo que el POS **todavía no** hace, y se nota: devolución parcial (hoy se cancela la venta
+completa), historial de ventas con reimpresión, reportes, límite de intentos del step-up y
+el PIN/passkeys de F6. El step-up ya funciona con la
 **contraseña de la cuenta** para las políticas que lo piden —descuento de más del 10 %,
 venta de más de $5 000, venta de más de $1 000 después de las 20:00, retiro de más de
 $500 y cancelación— y el otorgamiento dura cinco minutos y está acotado al permiso.
@@ -417,10 +450,12 @@ $500 y cancelación— y el otorgamiento dura cinco minutos y está acotado al p
 | `src/db/migraciones.ts` | Los `.sql` de `packages/db` incrustados en el bundle por Vite. |
 | `src/diagnostico/` | El panel: capas, migraciones, semillas, la prueba de dos pestañas y la de la transacción. Es una herramienta de desarrollo y sólo se llega a ella **con la sesión iniciada**. |
 | `src/diagnostico/outbox.ts` | La venta de prueba de la sección 4: la emite, la revienta y borra lo que dejó. |
-| `src/productos/` | El catálogo (F1.1): lista con búsqueda, alta y edición. `Formulario.tsx` y `Lista.tsx` son las dos vistas; `App.tsx` es el armazón de pestañas que monta el POS, el catálogo, las etiquetas, el respaldo y el diagnóstico. |
+| `src/productos/` | El catálogo (F1.1): lista con búsqueda, alta y edición. `Formulario.tsx` y `Lista.tsx` son las dos vistas; `PantallaGestion.tsx` administra categorías y proveedores; `App.tsx` es el armazón de pestañas que monta el POS, el catálogo, la importación, las etiquetas, los ajustes, el respaldo y el diagnóstico. |
+| `src/importacion/` | Importación CSV (F1.10): el parser puro (`csv.ts`) y la pantalla (`PantallaImportacion.tsx`). El lote es atómico; una fila mala impide toda la importación. |
 | `src/etiquetas/PantallaEtiquetas.tsx` | Etiquetas (F1.7–F1.9): hoja A4 con EAN-13, calibración guardada en `localStorage` y hoja de prueba. Imprime en un iframe con su propio `@page` para no mezclarse con el ticket de 58 mm. |
+| `src/ajustes/PantallaAjustes.tsx` | Datos del negocio (nombre, RFC, dirección, teléfono) en `settings`. El ticket y el corte Z los usan; al guardar avisa al POS para que recargue el encabezado. |
 | `src/respaldo/PantallaRespaldo.tsx` | Respaldo manual: descarga el volcado `.tgz` y lo restaura, con un volcado de seguridad antes de reemplazar. |
-| `src/pos/PantallaVenta.tsx` | El POS (F2): turno, buscador/escáner, carrito, cobro —también mixto—, arqueo, movimientos de cajón, corte Z y cancelación con motivo. Se monta oculto al cambiar de pestaña para no perder el carrito. |
+| `src/pos/PantallaVenta.tsx` | El POS (F2): turno, buscador/escáner, carrito, descuento por importe, cobro —también mixto—, arqueo, movimientos de cajón, corte Z y cancelación con motivo. Se monta oculto al cambiar de pestaña para no perder el carrito. |
 | `src/pos/Ticket.tsx` | El ticket de 58 mm y el corte Z, más el CSS de impresión que oculta el resto de la app al llamar a `window.print()`. |
 | `src/componentes/ui.tsx` | Los componentes base, al estilo shadcn/ui pero escritos a mano: botón, campo, entrada, selección, tarjeta y aviso. Sin Radix mientras no haya diálogos. |
 | `src/pwa.ts` | Registra el service worker y muestra el aviso de versión nueva. |

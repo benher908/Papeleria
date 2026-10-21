@@ -8,12 +8,17 @@ import { cargarMigraciones } from './archivos';
 import { ErrorNoAutorizado } from './eventos';
 import {
   actualizarProducto,
+  actualizarProveedor,
+  crearCategoria,
   crearProducto,
+  crearProductosLote,
+  crearProveedor,
   ErrorCodigoDuplicado,
   ErrorCodigoInvalido,
   ErrorProducto,
   listarCategorias,
   listarProductos,
+  listarProveedores,
   listarUnidades,
 } from './productos';
 import { migrar, type ClienteTransaccional } from './runner';
@@ -377,5 +382,101 @@ describe('edición', () => {
     await expect(
       actualizarProducto(cliente, creado.id, { nombre: 'Otro' }, contextoAuditor),
     ).rejects.toBeInstanceOf(ErrorNoAutorizado);
+  });
+});
+
+describe('importación por lote', () => {
+  test('da de alta varios productos en una sola transacción', async () => {
+    const creados = await crearProductosLote(
+      cliente,
+      [
+        producto({ nombre: 'Lápiz Mirado 2' }),
+        producto({ nombre: 'Goma blanca', precioMinor: 500n, costoMinor: 250n }),
+        producto({ nombre: 'Sacapuntas', precioMinor: 1200n, costoMinor: 600n }),
+      ],
+      contextoDueno,
+    );
+
+    expect(creados).toHaveLength(3);
+    expect(await contar(`SELECT count(*)::int AS n FROM products`)).toBe(3);
+    expect(await contar(`SELECT count(*)::int AS n FROM outbox`)).toBe(3);
+  });
+
+  test('si un renglón falla, no entra ninguno ni se gasta un folio interno', async () => {
+    const antes = await siguienteCodigo();
+
+    await expect(
+      crearProductosLote(
+        cliente,
+        [
+          producto({ nombre: 'Bueno 1' }),
+          producto({ nombre: 'Bueno 2' }),
+          // El tercero es inválido: el precio no puede ser cero.
+          producto({ nombre: 'Malo', precioMinor: 0n }),
+        ],
+        contextoDueno,
+      ),
+    ).rejects.toBeInstanceOf(ErrorProducto);
+
+    expect(await contar(`SELECT count(*)::int AS n FROM products`)).toBe(0);
+    expect(await contar(`SELECT count(*)::int AS n FROM outbox`)).toBe(0);
+    expect(await siguienteCodigo()).toBe(antes);
+  });
+
+  test('un código repetido dentro del lote revierte también los anteriores', async () => {
+    const codigo = '2000000000015';
+
+    await expect(
+      crearProductosLote(
+        cliente,
+        [
+          producto({ nombre: 'Primero', codigos: [codigo] }),
+          producto({ nombre: 'Segundo', codigos: [codigo] }),
+        ],
+        contextoDueno,
+      ),
+    ).rejects.toBeInstanceOf(ErrorCodigoDuplicado);
+
+    expect(await contar(`SELECT count(*)::int AS n FROM products`)).toBe(0);
+    expect(await contar(`SELECT count(*)::int AS n FROM outbox`)).toBe(0);
+  });
+});
+
+describe('categorías y proveedores', () => {
+  test('crea una categoría con su path y aparece en el catálogo', async () => {
+    const { id } = await crearCategoria(cliente, { nombre: 'Manualidades' }, contextoDueno);
+
+    const fila = await unaFila<{ path: string }>(
+      `SELECT path FROM categories WHERE id = $1`,
+      [id],
+    );
+    expect(fila.path).toBe('manualidades');
+
+    const categorias = await listarCategorias(cliente);
+    expect(categorias.some((categoria) => categoria.nombre === 'Manualidades')).toBe(true);
+  });
+
+  test('crea un proveedor y lo actualiza sin perder el teléfono', async () => {
+    const { id } = await crearProveedor(
+      cliente,
+      { nombre: 'Distribuidora Pérez', telefono: '555-1234' },
+      contextoDueno,
+    );
+
+    let proveedores = await listarProveedores(cliente);
+    expect(proveedores).toEqual([
+      { id, nombre: 'Distribuidora Pérez', telefono: '555-1234', notas: null },
+    ]);
+
+    await actualizarProveedor(
+      cliente,
+      id,
+      { nombre: 'Distribuidora Pérez SA', telefono: '555-9876' },
+      contextoDueno,
+    );
+
+    proveedores = await listarProveedores(cliente);
+    expect(proveedores[0]?.nombre).toBe('Distribuidora Pérez SA');
+    expect(proveedores[0]?.telefono).toBe('555-9876');
   });
 });

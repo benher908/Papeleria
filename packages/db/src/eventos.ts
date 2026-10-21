@@ -178,9 +178,24 @@ export async function emitirEvento<Tipo extends string, Payload>(
   cliente: ClienteTransaccional,
   entrada: EntradaEmision<Tipo, Payload>,
 ): Promise<EventoEmitido<Tipo, Payload>> {
-  const ahora = entrada.ahora ?? Date.now;
+  return cliente.transaction((tx) => emitirEventoEnTx(tx, entrada));
+}
 
-  return cliente.transaction(async (tx) => {
+/**
+ * La misma emisión, pero dentro de una transacción que ya está abierta.
+ *
+ * Existe por la importación de CSV: cien productos tienen que entrar juntos o no
+ * entrar ninguno. Llamar a `emitirEvento()` cien veces abriría cien transacciones
+ * y, si el renglón 73 está mal, los 72 anteriores ya estarían confirmados.
+ *
+ * No se exporta para que la use cualquiera: el llamador tiene que haber abierto la
+ * transacción y hacerse responsable de que todo lo de adentro quepa en ella.
+ */
+export async function emitirEventoEnTx<Tipo extends string, Payload>(
+  tx: ClienteSql,
+  entrada: EntradaEmision<Tipo, Payload>,
+): Promise<EventoEmitido<Tipo, Payload>> {
+  const ahora = entrada.ahora ?? Date.now;
     // 1. Contadores. Van dentro de la transacción: si algo falla después, el
     //    `device_seq` se revierte con todo lo demás y no queda un hueco que el
     //    servidor reclamaría para siempre.
@@ -239,8 +254,7 @@ export async function emitirEvento<Tipo extends string, Payload>(
       ],
     );
 
-    return evento;
-  });
+  return evento;
 }
 
 /**

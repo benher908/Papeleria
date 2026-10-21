@@ -64,7 +64,7 @@ gantt
 |---|-----------|------------------------|--------|
 | 0.1 | Monorepo con pnpm workspaces | `pnpm -r build` compila los 3 paquetes | 🟡 workspaces listos y **`apps/web` creado**; falta `apps/api` |
 | 0.2 | `packages/core` con dominio y dinero | `bigint` en centavos + `roundHalfUp` con tests | ✅ **195 pruebas en verde** (+ EAN-13, precios y totales; desde 0.5: ULID, UUID v7 y el reloj lógico híbrido; desde 0.6: `evaluar()` y la gramática de condiciones; desde 0.7: las reglas puras de contraseña y sesión; desde 0.8: el lector HID) |
-| 0.3 | `packages/db/migrations/0001..0003` | Se aplican en **PGlite y Postgres**, verificado en CI | ✅ **38 pruebas en verde** (hoy **175**, con la 0004–0010, el login y la venta libre), y verificado también a mano contra un PostgreSQL 16.14 real: los dos motores acaban con el **mismo esquema, línea por línea** (tablas, columnas con tipo y `NOT NULL`, índices, restricciones, funciones y disparadores). El flujo de CI levanta ese mismo Postgres; falta empujarlo a GitHub para que corra solo |
+| 0.3 | `packages/db/migrations/0001..0003` | Se aplican en **PGlite y Postgres**, verificado en CI | ✅ **38 pruebas en verde** (hoy **180**, con la 0004–0010, el login, la venta libre y la importación), y verificado también a mano contra un PostgreSQL 16.14 real: los dos motores acaban con el **mismo esquema, línea por línea** (tablas, columnas con tipo y `NOT NULL`, índices, restricciones, funciones y disparadores). El flujo de CI levanta ese mismo Postgres; falta empujarlo a GitHub para que corra solo |
 | 0.4 | **PGlite en Web Worker** con cliente tipado | Dos pestañas abiertas **no** corrompen la BD | ✅ **Verificado en un navegador real, con dos pestañas abiertas.** Una es *líder* y la otra *seguidora*; ninguna consulta se entrelaza. En la prueba de estrés —las dos peleando por la misma fila— **261 transacciones en 4 s**, `contador == marcas` exacto y **0 filas perdidas**. Y al cerrar la pestaña líder, otra toma el relevo sin que se note. De paso apareció la restricción que más se siente: en el modo por defecto PGlite **espera el volcado a disco después de cada consulta** (3 transacciones/s frente a 64 con `relaxedDurability`). Se usa `relaxedDurability` y se llama a `sincronizar()` tras las escrituras que no se pueden perder — con una corrección que llegó en 0.7: en modo relajado `syncToFs()` **no espera** el volcado (y lo descarta si ya hay uno en marcha), así que `sincronizar()` reduce la ventana pero no la cierra. Está documentado como deuda con su remedio en [`apps/web/README.md`](../apps/web/README.md) |
 | 0.5 | `emitirEvento()` + `outbox` | Una venta de prueba escribe estado + evento en una transacción | ✅ **Hecho y verificado en cuatro sitios.** La venta de prueba escribe venta, líneas, movimiento de stock, evento en la cola y auditoría; forzando un fallo **después** de escribir el estado, la base queda idéntica, contadores incluidos (ni un folio gastado, ni un hueco en `device_seq`). El HLC no retrocede aunque el reloj del PC se vaya a 2010. Probado contra **PGlite** y contra **PostgreSQL 16.14 real**, y a mano en el navegador (sección 4 del panel de diagnóstico). De paso apareció lo que el diseño daba por hecho y no existía: `device_counters`, `folio_counters` y `devices.codigo` (migración `0004_eventos.sql`) |
 | 0.6 | `evaluar()` (RBAC+ABAC) con un rol | Tabla de tests de políticas en verde | ✅ **Hecho, y la tabla del doc 06 §9 corre contra las reglas reales.** `evaluar()` es puro y sin IO (corre igual en la caja, en el celular y en el servidor); **`packages/db/src/autorizacion.ts`** es quien carga permisos, políticas y step-up de las tablas, dentro de la transacción del evento. Las **30 filas** de `0005_politicas.sql` cubren las 31 reglas del §5 (P20 y P23 son RBAC puro; P21 son dos permisos). Tres cosas que el diseño no tenía: el lado derecho de una comparación puede ser **otro campo** (sin eso P1 —"precio nuevo menor al costo"— no se puede escribir, y por eso 0002 no sembró nada); `gt_abs`, porque la diferencia de un arqueo puede ser faltante o sobrante; y un **catálogo cerrado de campos** validado al cargar, que lanza con el nombre mal escrito en vez de apagar una regla en silencio |
@@ -138,7 +138,9 @@ que pediste. Media hora de trabajo que te ahorra semanas.
 
 **Hecho hasta ahora:** **1.1 en curso y usable** — la capa de datos y la pantalla de
 producto (alta, listado con búsqueda y edición) están hechas y probadas contra PGlite y
-PostgreSQL; faltan los CRUD de categorías, unidades y proveedores. Dos fallos reales
+PostgreSQL. La pestaña **Gestión** ya da de alta categorías y proveedores, y el formulario
+de producto permite asignar el proveedor; falta el CRUD de unidades (hoy son semillas).
+Dos fallos reales
 salieron de usarla, y los dos eran de los que las pruebas no ven: el primero usuario se
 creaba **sin rol**, así que la dueña no podía autorizar nada y el alta fallaba con «El rol
 no incluye productos:crear» (`crearUsuario()` ahora le asigna `dueno` —sólo al primero— y
@@ -167,7 +169,20 @@ con el lector real.
 **1.9 está a medias a propósito:** ya se imprime la etiqueta de anaquel con Code 128
 (`ANAQ-A-3-12`) y su calibración, pero **escanear ese código todavía no abre la selección
 de productos del anaquel**. La tabla `shelf_labels` y esa pantalla siguen pendientes. **1.5**
-(presentaciones) y **1.10** (importación CSV) tampoco empezaron.
+(presentaciones) sigue pendiente.
+
+**1.10 (importación CSV) está implementada y verificada en el navegador.** Acepta coma,
+punto y coma o tabulador, campos entre comillas, BOM y encabezados con alias; valida
+precio/código/SKU y **no escribe nada si una fila falla**: el lote entero se crea en una
+sola transacción (`crearProductosLote()` → `crearProductoEnTx()`), con prueba de éxito, de
+reversión completa y de código duplicado. El `codigo` vacío genera el EAN interno; la
+categoría y la unidad tienen que existir de antemano. En la prueba real se importaron dos
+productos y la lista pasó de uno a tres.
+
+La pestaña **Ajustes** guarda nombre, RFC, dirección y teléfono del negocio en `settings`.
+El ticket y el corte Z los usan; el POS recarga el encabezado al guardar, sin reiniciar.
+Configuración no es un evento de negocio, así que no pasa por `emitirEvento()`; sí se
+guarda en una sola sentencia para no dejar media configuración vieja.
 
 ### El hito real de F1
 
@@ -202,7 +217,7 @@ Ese es el momento en que el sistema deja de ser una idea. **No sigas a F2 sin ha
 |---|-----------|------------------------|
 | 2.1 | `cash_sessions`: abrir / cerrar / arqueo | No puedes vender sin turno abierto |
 | 2.2 | Carrito con escaneo (HID + manual) y cantidades | Escanear 3 veces el mismo código suma 3 |
-| 2.3 | Pantalla de cobro con efectivo, cambio sugerido y pago mixto | Una venta de 1 producto en < 10 segundos |
+| 2.3 | Pantalla de cobro con efectivo, cambio sugerido, pago mixto y descuento | Una venta de 1 producto en < 10 segundos |
 | 2.4 | Cálculo de totales con IVA incluido, centavos, `roundHalfUp` | Test: 100 tickets calculados a mano coinciden al centavo |
 | 2.5 | Ticket 58 mm por `window.print()` | Se imprime en tu impresora, con IVA incluido y folio |
 | 2.6 | `folio_local` por terminal (`C1-000123`) | Funciona **sin internet**, sin huecos, sin duplicados |
@@ -218,10 +233,14 @@ un navegador real**: abrir turno, escanear/buscar, cantidades, cobro en efectivo
 sugerido, **pago mixto** (efectivo + tarjeta/transferencia/vale, con el efectivo como única
 fuente de cambio), ticket de 58 mm con folio e IVA incluido, movimientos de cajón, arqueo,
 cierre con nota obligatoria, corte Z, **favoritos** calculados de las ventas completadas,
-**venta libre** (fotocopias y servicios sin mover stock) y **cancelación de una venta del
+**venta libre** (fotocopias y servicios sin mover stock), **descuento por importe** (se
+teclea lo que se rebaja, no un porcentaje; se reparte entre las líneas sin perder centavos
+y el ticket muestra importe, IVA, descuento y total) y **cancelación de una venta del
 turno** con motivo y autorización. La venta y el cierre son transacciones únicas (venta,
 líneas, pagos, stock, evento y auditoría; o nada), y el esperado del cajón se recalcula
-dentro del cierre con `monto − cambio`.
+dentro del cierre con `monto − cambio`. El descuento se verificó en el navegador:
+$18.50 − $5.00 = $13.50, con step-up por contraseña y ticket `C2-000001`; en la prueba
+posterior, $20.00 con IVA incluido mostró $17.24 + $2.76 sin descuadre.
 
 El **step-up ya no es un PIN ficticio**: como el PIN es F6, las políticas que piden
 autorización —descuento > 10 %, venta > $5 000, venta > $1 000 después de las 20:00,
@@ -235,7 +254,7 @@ directorio de PGlite y lo restaura, guardando antes un volcado de seguridad. Se 
 punta a punta en el navegador: recuperó producto, ventas, cancelación y turno. **No hay
 respaldo automático**; eso es F4.
 
-En la base: **175 pruebas en verde + 2 saltadas con PGlite** (12 archivos; las dos que
+En la base: **180 pruebas en verde + 2 saltadas con PGlite** (12 archivos; las dos que
 necesitan PostgreSQL real se saltan solas cuando no está). La corrida contra PostgreSQL 16
 real hay que repetirla después de las migraciones 0009 y 0010.
 
@@ -479,11 +498,12 @@ Si de todo el documento solo puedes ejecutar tres cosas:
 
 Y después: **la tarea 0.9** (la cámara), que es la única de F0 que falta.
 
-> 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 y 0.10 ya están hechas: `pnpm test` corre **372 pruebas** sobre
-> dinero, EAN-13, precios, totales, ULID, UUID v7, reloj lógico, migraciones, esquema,
-> la transacción que ata cada cambio del negocio a su evento, las políticas del
-> doc 06 §9 contra las reglas sembradas, el login local (contraseña, sesión, rol de la
-> primera cuenta y vencimiento), el step-up con contraseña, el lector HID, los códigos
-> internos (1 000 sin repetir), el catálogo de productos (alta, búsqueda y edición), la
-> venta con pago mixto, la venta libre, la cancelación y el arqueo. Las etiquetas se
+> 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 y 0.10 ya están hechas: `pnpm test` corre **396
+> pruebas en verde + 2 saltadas** sobre dinero, EAN-13, precios, totales, ULID, UUID v7,
+> reloj lógico, migraciones, esquema, la transacción que ata cada cambio del negocio a su
+> evento, las políticas del doc 06 §9 contra las reglas sembradas, el login local
+> (contraseña, sesión, rol de la primera cuenta y vencimiento), el step-up con contraseña,
+> el lector HID, los códigos internos (1 000 sin repetir), el catálogo de productos (alta,
+> búsqueda, edición, categorías y proveedores), la importación CSV atómica, los descuentos,
+> la venta con pago mixto, la venta libre, la cancelación y el arqueo. Las etiquetas se
 > verificaron en el navegador, pero **no en papel**.

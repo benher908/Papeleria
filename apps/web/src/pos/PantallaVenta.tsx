@@ -9,20 +9,16 @@
  *   2. **El carrito.** Se llena escaneando (lector HID por la cola de escaneo),
  *      buscando por nombre o código, o con el botón de un resultado. Escanear dos
  *      veces el mismo código suma dos piezas; no crea dos líneas.
- *   3. **El cobro.** Efectivo con cambio sugerido, o tarjeta/transferencia por el
- *      importe exacto. Al confirmar se llama a `registrarVenta()`, que escribe la
- *      venta, el stock y el evento en una sola transacción.
+ *   3. **El cobro.** Efectivo con cambio sugerido, pago mixto con varias filas
+ *      (sólo el efectivo puede dar cambio), descuento por importe y venta libre.
+ *      Al confirmar se llama a `registrarVenta()`, que escribe la venta, el stock
+ *      y el evento en una sola transacción.
  *
  * ─── LO QUE NO HACE TODAVÍA (y por qué no lo finge) ─────────────────────────
  *
- * · Descuentos: el carrito no los ofrece. Las políticas P10/P11 piden step-up a
- *   partir del 10 %, y no hay pantalla de PIN hasta F6. Un campo que siempre
- *   falla al guardar es peor que un campo que no está.
- * · Pago mixto: la capa de datos lo soporta y está probado; la pantalla cobra con
- *   un solo método. Agregar la segunda fila es F2.3 y no cambia el modelo.
- * · Devoluciones y cancelaciones: F2.10. El dato ya existe; falta la pantalla.
- * · La venta libre (fotocopias) choca con `sale_lines.product_id NOT NULL`; se
- *   resuelve en F2.9 con un producto de servicios, no con un `if` en la caja.
+ * · Devolución parcial: hoy se cancela la venta completa (F2.10).
+ * · Historial de ventas con reimpresión y reportes: F7.
+ * · PIN y passkeys: F6; el step-up de las políticas ya usa la contraseña.
  *
  * ─── EL FOCO ES PARTE DEL DISEÑO ────────────────────────────────────────────
  *
@@ -143,6 +139,8 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
    * sólo puede salir de una fila en efectivo, igual que en `repartirCambio()`.
    */
   const [pagosUI, setPagosUI] = useState<readonly PagoUI[]>([]);
+  const [descuentoTexto, setDescuentoTexto] = useState('');
+  const [motivoDescuento, setMotivoDescuento] = useState('');
   const [cerrando, setCerrando] = useState(false);
   const [registrandoMov, setRegistrandoMov] = useState(false);
   const [cobrando, setCobrando] = useState(false);
@@ -186,6 +184,7 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
 
   const [negocio, setNegocio] = useState<DatosNegocio>({
     nombre: 'Papelería',
+    rfc: '',
     direccion: '',
     telefono: '',
   });
@@ -199,10 +198,25 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
     [sesion.usuario.id, sesion.dispositivo.id],
   );
 
-  const total = useMemo(
+  const subtotal = useMemo(
     () => lineas.reduce((suma, linea) => suma + porCantidad(linea.precioMinor, linea.qty), 0n),
     [lineas],
   );
+
+  /**
+   * El descuento se teclea como importe, no como porcentaje: es lo que el dueño
+   * negocia en el mostrador («quítale diez pesos»). El porcentaje se muestra
+   * calculado y es el que leen las políticas P10 y P11.
+   */
+  const descuento = useMemo(() => {
+    const tecleado = intentarCentavos(descuentoTexto === '' ? '0' : descuentoTexto) ?? 0n;
+    if (tecleado <= 0n) return 0n;
+    return tecleado > subtotal ? subtotal : tecleado;
+  }, [descuentoTexto, subtotal]);
+  const total = subtotal - descuento;
+  const descuentoPct =
+    subtotal <= 0n ? 0 : Number((descuento * 10_000n) / subtotal) / 100;
+  const motivoObligatorio = descuento > 0n && (descuentoPct > 30 || descuento > 20_000n);
 
   const pagosMinor = pagosUI.map((pago) => ({
     ...pago,
@@ -247,28 +261,39 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
     void cargarFavoritos();
   }, [cargarFavoritos]);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const filas = await base.consultar<{ clave: string; valor: unknown }>(
-          `SELECT clave, valor FROM settings
-            WHERE clave IN ('nombre_negocio', 'direccion', 'telefono')`,
-        );
-        const valor = (clave: string): string => {
-          const fila = filas.find((f) => f.clave === clave);
-          return fila === undefined || fila.valor === null ? '' : String(fila.valor);
-        };
-        setNegocio({
-          nombre: valor('nombre_negocio') || 'Papelería',
-          direccion: valor('direccion'),
-          telefono: valor('telefono'),
-        });
-      } catch {
-        // La configuración es cosmética para el ticket: si falla, se usa el nombre
-        // genérico y la venta sigue. No vale la pena bloquear la caja por esto.
-      }
-    })();
+  const cargarNegocio = useCallback(async () => {
+    try {
+      const filas = await base.consultar<{ clave: string; valor: unknown }>(
+        `SELECT clave, valor #>> '{}' AS valor FROM settings
+          WHERE clave IN ('nombre_negocio', 'rfc', 'direccion', 'telefono')`,
+      );
+      const valor = (clave: string): string => {
+        const fila = filas.find((f) => f.clave === clave);
+        return fila === undefined || fila.valor === null ? '' : String(fila.valor);
+      };
+      setNegocio({
+        nombre: valor('nombre_negocio') || 'Papelería',
+        rfc: valor('rfc'),
+        direccion: valor('direccion'),
+        telefono: valor('telefono'),
+      });
+    } catch {
+      // La configuración es cosmética para el ticket: si falla, se usa el nombre
+      // genérico y la venta sigue. No vale la pena bloquear la caja por esto.
+    }
   }, [base]);
+
+  useEffect(() => {
+    void cargarNegocio();
+    // Ajustes vive en otra pestaña de la misma app y el POS no se desmonta al
+    // cambiar de pestaña. Sin este aviso, el ticket seguiría diciendo el nombre
+    // viejo hasta recargar el navegador.
+    const alCambiar = (): void => {
+      void cargarNegocio();
+    };
+    window.addEventListener('papeleria:ajustes', alCambiar);
+    return () => window.removeEventListener('papeleria:ajustes', alCambiar);
+  }, [cargarNegocio]);
 
   // ── búsqueda ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -483,7 +508,14 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
   }
 
   function quitar(clave: string): void {
-    setLineas((actuales) => actuales.filter((linea) => linea.clave !== clave));
+    setLineas((actuales) => {
+      const siguientes = actuales.filter((linea) => linea.clave !== clave);
+      if (siguientes.length === 0) {
+        setDescuentoTexto('');
+        setMotivoDescuento('');
+      }
+      return siguientes;
+    });
   }
 
   async function alBuscar(evento: React.FormEvent): Promise<void> {
@@ -641,6 +673,12 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
 
     setErrorCobro(null);
 
+    if (motivoObligatorio && motivoDescuento.trim() === '') {
+      setErrorCobro(
+        'Este descuento necesita un motivo: escríbelo antes de cobrar para que quede en la auditoría.',
+      );
+      return;
+    }
     if (totalPagado < total) {
       setErrorCobro(`Falta cobrar ${pesos(falta)}.`);
       return;
@@ -664,23 +702,29 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
 
     setCobrando(true);
     try {
+      const descuentosLinea = repartirDescuento(lineas, descuento);
       const registrada = await registrarVenta(
         comoClienteTransaccional(base),
         {
           turnoId: turno.id,
-          lineas: lineas.map((linea) => ({
-            productoId: linea.productoId,
-            presentacionId: linea.presentacionId,
-            qty: linea.qty,
-            ...(linea.esLibre
-              ? {
-                  descripcion: linea.nombre,
-                  precioUnitarioMinor: linea.precioMinor,
-                  esVentaLibre: true,
-                }
-              : {}),
-          })),
+          lineas: lineas.map((linea, indice) => {
+            const descuentoLinea = descuentosLinea[indice] ?? 0n;
+            return {
+              productoId: linea.productoId,
+              presentacionId: linea.presentacionId,
+              qty: linea.qty,
+              ...(descuentoLinea > 0n ? { descuentoMinor: descuentoLinea } : {}),
+              ...(linea.esLibre
+                ? {
+                    descripcion: linea.nombre,
+                    precioUnitarioMinor: linea.precioMinor,
+                    esVentaLibre: true,
+                  }
+                : {}),
+            };
+          }),
           pagos,
+          ...(motivoDescuento.trim() === '' ? {} : { motivo: motivoDescuento.trim() }),
         },
         contexto,
       );
@@ -694,6 +738,8 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
       setVista('ticket');
       setLineas([]);
       setPagosUI([]);
+      setDescuentoTexto('');
+      setMotivoDescuento('');
       setBusqueda('');
       setResultados([]);
       setAviso(null);
@@ -706,7 +752,10 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
       if (
         pedirAutorizacion(causa, {
           permiso: 'ventas:crear',
-          descripcion: `Cobrar ${pesos(total)} de esta venta.`,
+          descripcion:
+            descuento > 0n
+              ? `Cobrar ${pesos(total)} con un descuento de ${pesos(descuento)} (${descuentoPct.toFixed(2)} %).`
+              : `Cobrar ${pesos(total)} de esta venta.`,
           accion: () => cobrar(imprimir),
         })
       ) {
@@ -975,7 +1024,15 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
 
           <Carrito
             lineas={lineas}
+            subtotal={subtotal}
+            descuento={descuento}
+            descuentoPct={descuentoPct}
+            descuentoTexto={descuentoTexto}
+            motivo={motivoDescuento}
+            motivoObligatorio={motivoObligatorio}
             total={total}
+            onDescuento={setDescuentoTexto}
+            onMotivo={setMotivoDescuento}
             onCantidad={cambiarCantidad}
             onQuitar={quitar}
             onCobrar={abrirCobro}
@@ -1065,6 +1122,18 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
                 ))}
 
                 <div className="rounded-md border border-[var(--linea)] bg-[var(--fondo)] p-3">
+                  {descuento > 0n ? (
+                    <>
+                      <div className="flex items-baseline justify-between text-sm">
+                        <span className="text-[var(--suave)]">Importe</span>
+                        <span>{pesos(subtotal)}</span>
+                      </div>
+                      <div className="flex items-baseline justify-between text-sm text-[var(--mal)]">
+                        <span>Descuento ({descuentoPct.toFixed(2)} %)</span>
+                        <span>− {pesos(descuento)}</span>
+                      </div>
+                    </>
+                  ) : null}
                   <div className="flex items-baseline justify-between text-sm">
                     <span className="text-[var(--suave)]">Total</span>
                     <strong className="text-base">{pesos(total)}</strong>
@@ -1684,13 +1753,29 @@ function Buscador({
 
 function Carrito({
   lineas,
+  subtotal,
+  descuento,
+  descuentoPct,
+  descuentoTexto,
+  motivo,
+  motivoObligatorio,
   total,
+  onDescuento,
+  onMotivo,
   onCantidad,
   onQuitar,
   onCobrar,
 }: {
   readonly lineas: readonly LineaCarrito[];
+  readonly subtotal: bigint;
+  readonly descuento: bigint;
+  readonly descuentoPct: number;
+  readonly descuentoTexto: string;
+  readonly motivo: string;
+  readonly motivoObligatorio: boolean;
   readonly total: bigint;
+  readonly onDescuento: (texto: string) => void;
+  readonly onMotivo: (texto: string) => void;
   readonly onCantidad: (clave: string, qty: number) => void;
   readonly onQuitar: (clave: string) => void;
   readonly onCobrar: () => void;
@@ -1767,7 +1852,40 @@ function Carrito({
       )}
 
       <div className="mt-3 border-t border-[var(--linea)] pt-3">
-        <div className="flex items-baseline justify-between">
+        {lineas.length === 0 ? null : (
+          <>
+            <label className="flex flex-col gap-1 text-xs font-medium text-[var(--suave)]">
+              Descuento de la venta ($)
+              <Entrada
+                value={descuentoTexto}
+                onChange={(evento) => onDescuento(evento.target.value)}
+                placeholder="0.00"
+                inputMode="decimal"
+              />
+            </label>
+            {descuento > 0n ? (
+              <>
+                <div className="mt-2 flex items-baseline justify-between text-sm">
+                  <span className="text-[var(--suave)]">Importe</span>
+                  <span className="font-mono">{pesos(subtotal)}</span>
+                </div>
+                <div className="flex items-baseline justify-between text-sm text-[var(--mal)]">
+                  <span>Descuento ({descuentoPct.toFixed(2)} %)</span>
+                  <span className="font-mono">− {pesos(descuento)}</span>
+                </div>
+                <label className="mt-2 flex flex-col gap-1 text-xs font-medium text-[var(--suave)]">
+                  Motivo del descuento{motivoObligatorio ? ' (obligatorio)' : ' (opcional)'}
+                  <Entrada
+                    value={motivo}
+                    onChange={(evento) => onMotivo(evento.target.value)}
+                    placeholder="Cliente frecuente, producto con detalle…"
+                  />
+                </label>
+              </>
+            ) : null}
+          </>
+        )}
+        <div className="mt-3 flex items-baseline justify-between">
           <span className="text-sm text-[var(--suave)]">Total</span>
           <strong className="text-2xl">{pesos(total)}</strong>
         </div>
@@ -1777,6 +1895,38 @@ function Carrito({
       </div>
     </Tarjeta>
   );
+}
+
+/**
+ * Reparte un descuento de venta entre las líneas, sin pasarse del bruto de
+ * ninguna. El redondeo se queda en las últimas líneas, no se pierde: la suma de
+ * los descuentos de línea tiene que ser exactamente el descuento que vio el
+ * cliente, porque de ahí sale el total del ticket y la regla P11.
+ */
+function repartirDescuento(
+  lineas: readonly LineaCarrito[],
+  descuento: bigint,
+): bigint[] {
+  const brutos = lineas.map((linea) => porCantidad(linea.precioMinor, linea.qty));
+  const base = brutos.reduce((suma, bruto) => suma + bruto, 0n);
+  const resultado = brutos.map(() => 0n);
+  if (descuento <= 0n || base <= 0n) return resultado;
+
+  let restante = descuento;
+  for (let i = 0; i < lineas.length && restante > 0n; i++) {
+    const bruto = brutos[i] ?? 0n;
+    const capacidadRestante = brutos
+      .slice(i + 1)
+      .reduce((suma, valor) => suma + valor, 0n);
+    const minimo = restante > capacidadRestante ? restante - capacidadRestante : 0n;
+    const proporcional = (bruto * descuento) / base;
+    const parte = minimo > proporcional ? minimo : proporcional;
+    const acotada = parte > bruto ? bruto : parte > restante ? restante : parte;
+    resultado[i] = acotada;
+    restante -= acotada;
+  }
+
+  return resultado;
 }
 
 function FilaResumen({ etiqueta, valor }: { readonly etiqueta: string; readonly valor: bigint }) {

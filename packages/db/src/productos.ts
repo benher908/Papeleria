@@ -33,7 +33,7 @@
 import { normalizarCodigo, uuidV7, validaCode128, validaEAN13 } from '@papeleria/core';
 
 import { autorizar } from './autorizacion';
-import { emitirEvento } from './eventos';
+import { emitirEvento, emitirEventoEnTx } from './eventos';
 import type { ClienteSql, ClienteTransaccional } from './runner';
 import { generarCodigoInterno } from './secuencias';
 
@@ -96,6 +96,8 @@ export interface FilaProducto {
   readonly precioMinor: string;
   readonly costoMinor: string;
   readonly categoria: string | null;
+  readonly supplierId: string | null;
+  readonly proveedor: string | null;
   readonly unidad: string;
   readonly unidadAbreviatura: string;
   readonly stock: string;
@@ -207,6 +209,20 @@ export async function crearProducto(
   datos: DatosProducto,
   contexto: ContextoCatalogo,
 ): Promise<ProductoCreado> {
+  return cliente.transaction((tx) => crearProductoEnTx(tx, datos, contexto));
+}
+
+/**
+ * El alta de un producto dentro de una transacción ya abierta.
+ *
+ * La usa la importación de CSV para que cien altas sean un solo commit. El
+ * llamador que no sea la importación debería usar `crearProducto()`.
+ */
+export async function crearProductoEnTx(
+  tx: ClienteSql,
+  datos: DatosProducto,
+  contexto: ContextoCatalogo,
+): Promise<ProductoCreado> {
   const nombre = datos.nombre.trim();
   if (nombre === '') {
     throw new ErrorProducto('El producto necesita un nombre.');
@@ -223,7 +239,7 @@ export async function crearProducto(
   const presentacionId = uuidV7();
   const ahora = contexto.ahora;
 
-  const evento = await emitirEvento<'product.created', PayloadProducto>(cliente, {
+  const evento = await emitirEventoEnTx<'product.created', PayloadProducto>(tx, {
     tipo: 'product.created',
     dispositivoId: contexto.dispositivoId,
     usuarioId: contexto.usuarioId,
@@ -353,6 +369,27 @@ export async function crearProducto(
   };
 }
 
+/**
+ * Alta de varios productos en **una sola transacción**.
+ *
+ * La importación de CSV necesita esto: si el renglón 73 tiene un precio mal, no
+ * puede quedar medio catálogo importado. Aquí cada producto conserva su propio
+ * evento y su propia auditoría, pero todos comparten el mismo `BEGIN`.
+ */
+export async function crearProductosLote(
+  cliente: ClienteTransaccional,
+  filas: readonly DatosProducto[],
+  contexto: ContextoCatalogo,
+): Promise<ProductoCreado[]> {
+  return cliente.transaction(async (tx) => {
+    const creados: ProductoCreado[] = [];
+    for (const datos of filas) {
+      creados.push(await crearProductoEnTx(tx, datos, contexto));
+    }
+    return creados;
+  });
+}
+
 // ───────────────────────────── lectura ─────────────────────────────
 
 /**
@@ -390,6 +427,8 @@ export async function listarProductos(
     precio_minor: unknown;
     costo_minor: unknown;
     categoria: string | null;
+    supplier_id: string | null;
+    proveedor: string | null;
     unidad: string;
     abreviatura: string;
     stock: unknown;
@@ -399,7 +438,8 @@ export async function listarProductos(
     stock_minimo: unknown;
   }>(
     `SELECT p.id, p.nombre, p.sku, p.precio_minor, p.costo_minor,
-            c.nombre AS categoria, u.nombre AS unidad, u.abreviatura,
+            c.nombre AS categoria, p.supplier_id, pr.nombre AS proveedor,
+            u.nombre AS unidad, u.abreviatura,
             COALESCE(sl.qty_base, 0) AS stock,
             (SELECT b.codigo FROM product_barcodes b
               WHERE b.product_id = p.id AND b.deleted_at IS NULL
@@ -408,6 +448,7 @@ export async function listarProductos(
        FROM products p
        JOIN units u ON u.id = p.unit_id
        LEFT JOIN categories c ON c.id = p.category_id
+       LEFT JOIN suppliers pr ON pr.id = p.supplier_id
        LEFT JOIN stock_levels sl ON sl.product_id = p.id
       WHERE p.deleted_at IS NULL
         AND p.sku IS DISTINCT FROM $2
@@ -425,6 +466,8 @@ export async function listarProductos(
     precioMinor: String(fila.precio_minor),
     costoMinor: String(fila.costo_minor),
     categoria: fila.categoria,
+    supplierId: fila.supplier_id,
+    proveedor: fila.proveedor,
     unidad: fila.unidad,
     unidadAbreviatura: fila.abreviatura,
     stock: String(fila.stock),
@@ -454,6 +497,8 @@ export async function productosMasVendidos(
     precio_minor: unknown;
     costo_minor: unknown;
     categoria: string | null;
+    supplier_id: string | null;
+    proveedor: string | null;
     unidad: string;
     abreviatura: string;
     stock: unknown;
@@ -463,7 +508,8 @@ export async function productosMasVendidos(
     stock_minimo: unknown;
   }>(
     `SELECT p.id, p.nombre, p.sku, p.precio_minor, p.costo_minor,
-            c.nombre AS categoria, u.nombre AS unidad, u.abreviatura,
+            c.nombre AS categoria, p.supplier_id, pr.nombre AS proveedor,
+            u.nombre AS unidad, u.abreviatura,
             COALESCE(sl.qty_base, 0) AS stock,
             (SELECT b.codigo FROM product_barcodes b
               WHERE b.product_id = p.id AND b.deleted_at IS NULL
@@ -472,6 +518,7 @@ export async function productosMasVendidos(
        FROM products p
        JOIN units u ON u.id = p.unit_id
        LEFT JOIN categories c ON c.id = p.category_id
+       LEFT JOIN suppliers pr ON pr.id = p.supplier_id
        LEFT JOIN stock_levels sl ON sl.product_id = p.id
        JOIN (
          SELECT sl2.product_id, SUM(sl2.qty_base) AS vendidos
@@ -495,6 +542,8 @@ export async function productosMasVendidos(
     precioMinor: String(fila.precio_minor),
     costoMinor: String(fila.costo_minor),
     categoria: fila.categoria,
+    supplierId: fila.supplier_id,
+    proveedor: fila.proveedor,
     unidad: fila.unidad,
     unidadAbreviatura: fila.abreviatura,
     stock: String(fila.stock),
@@ -589,6 +638,83 @@ export async function listarCategorias(
   return rows;
 }
 
+export async function crearCategoria(
+  cliente: ClienteTransaccional,
+  datos: { nombre: string; parentId?: string | null },
+  _contexto: ContextoCatalogo,
+): Promise<{ id: string }> {
+  const nombre = datos.nombre.trim();
+  if (nombre === '') throw new ErrorProducto('La categoría necesita un nombre.');
+
+  return cliente.transaction(async (tx) => {
+    // Construir el path según el padre
+    let path = nombre.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    if (datos.parentId) {
+      const padre = await tx.query<{ path: string }>(
+        `SELECT path FROM categories WHERE id = $1 AND deleted_at IS NULL`, [datos.parentId]
+      );
+      const filaPadre = padre.rows[0];
+      if (filaPadre === undefined) throw new ErrorProducto('La categoría padre no existe.');
+      path = `${filaPadre.path}/${path}`;
+    }
+
+    const id = uuidV7();
+    await tx.query(
+      `INSERT INTO categories (id, parent_id, nombre, path) VALUES ($1, $2, $3, $4)`,
+      [id, datos.parentId ?? null, nombre, path]
+    );
+    return { id };
+  });
+}
+
+export async function listarProveedores(
+  cliente: ClienteSql,
+): Promise<Array<{ id: string; nombre: string; telefono: string | null; notas: string | null }>> {
+  const { rows } = await cliente.query<{ id: string; nombre: string; telefono: string | null; notas: string | null }>(
+    `SELECT id, nombre, telefono, notas FROM suppliers WHERE deleted_at IS NULL ORDER BY nombre`,
+  );
+  return rows;
+}
+
+export async function crearProveedor(
+  cliente: ClienteTransaccional,
+  datos: { nombre: string; telefono?: string | null; notas?: string | null },
+  _contexto: ContextoCatalogo,
+): Promise<{ id: string }> {
+  const nombre = datos.nombre.trim();
+  if (nombre === '') throw new ErrorProducto('El proveedor necesita un nombre.');
+
+  return cliente.transaction(async (tx) => {
+    const id = uuidV7();
+    await tx.query(
+      `INSERT INTO suppliers (id, nombre, telefono, notas) VALUES ($1, $2, $3, $4)`,
+      [id, nombre, datos.telefono?.trim() || null, datos.notas?.trim() || null]
+    );
+    return { id };
+  });
+}
+
+export async function actualizarProveedor(
+  cliente: ClienteTransaccional,
+  id: string,
+  cambios: { nombre?: string; telefono?: string | null; notas?: string | null },
+  _contexto: ContextoCatalogo,
+): Promise<void> {
+  await cliente.transaction(async (tx) => {
+    const actual = await tx.query<{ nombre: string; telefono: string | null; notas: string | null }>(
+      `SELECT nombre, telefono, notas FROM suppliers WHERE id = $1 AND deleted_at IS NULL`, [id]
+    );
+    const fila = actual.rows[0];
+    if (fila === undefined) throw new ErrorProducto('El proveedor no existe.');
+    const nombre = cambios.nombre?.trim() ?? fila.nombre;
+    if (nombre === '') throw new ErrorProducto('El proveedor necesita un nombre.');
+    await tx.query(
+      `UPDATE suppliers SET nombre = $2, telefono = $3, notas = $4 WHERE id = $1`,
+      [id, nombre, cambios.telefono === undefined ? fila.telefono : (cambios.telefono?.trim() || null), cambios.notas === undefined ? fila.notas : (cambios.notas?.trim() || null)]
+    );
+  });
+}
+
 export async function listarUnidades(
   cliente: ClienteSql,
 ): Promise<Array<{ id: string; nombre: string; abreviatura: string }>> {
@@ -596,6 +722,33 @@ export async function listarUnidades(
     `SELECT id, nombre, abreviatura FROM units ORDER BY nombre`,
   );
   return rows;
+}
+
+export async function crearUnidad(
+  cliente: ClienteTransaccional,
+  datos: { nombre: string; abreviatura: string },
+  _contexto: ContextoCatalogo,
+): Promise<{ id: string }> {
+  const nombre = datos.nombre.trim();
+  const abreviatura = datos.abreviatura.trim();
+  if (nombre === '' || abreviatura === '') throw new ErrorProducto('La unidad necesita nombre y abreviatura.');
+  return cliente.transaction(async (tx) => {
+    const id = uuidV7();
+    await tx.query('INSERT INTO units (id, nombre, abreviatura) VALUES ($1, $2, $3)', [id, nombre, abreviatura]);
+    return { id };
+  });
+}
+
+export async function actualizarUnidad(
+  cliente: ClienteTransaccional, id: string, datos: { nombre: string; abreviatura: string }, _contexto: ContextoCatalogo,
+): Promise<void> {
+  const nombre = datos.nombre.trim(); const abreviatura = datos.abreviatura.trim();
+  if (nombre === '' || abreviatura === '') throw new ErrorProducto('La unidad necesita nombre y abreviatura.');
+  await cliente.transaction(async (tx) => {
+    const existe = await tx.query<{ id: string }>('SELECT id FROM units WHERE id = $1', [id]);
+    if (existe.rows[0] === undefined) throw new ErrorProducto('La unidad no existe.');
+    await tx.query('UPDATE units SET nombre = $2, abreviatura = $3 WHERE id = $1', [id, nombre, abreviatura]);
+  });
 }
 
 // ───────────────────────────── edición ─────────────────────────────

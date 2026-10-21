@@ -32,6 +32,7 @@ import {
   ErrorProducto,
   listarCategorias,
   listarProductos,
+  listarProveedores,
   listarUnidades,
   type FilaProducto,
 } from '@papeleria/db';
@@ -44,8 +45,13 @@ import { comoClienteTransaccional } from '../db/cliente';
 import { montarPanel } from '../diagnostico/panel';
 import type { ColaEscaneo } from '../escaneo/cola';
 import { PantallaEtiquetas } from '../etiquetas/PantallaEtiquetas';
+import { PantallaImportacion } from '../importacion/PantallaImportacion';
 import { PantallaVenta } from '../pos/PantallaVenta';
 import { PantallaRespaldo } from '../respaldo/PantallaRespaldo';
+import { PantallaAjustes } from '../ajustes/PantallaAjustes';
+import { PantallaInventario } from '../inventario/PantallaInventario';
+import { PantallaReportes } from '../reportes/PantallaReportes';
+import { PantallaGestion } from './PantallaGestion';
 import { Formulario, type OpcionCatalogo, type ValoresFormulario } from './Formulario';
 import { pesos } from './formato';
 import { Lista } from './Lista';
@@ -56,8 +62,12 @@ export interface PropsApp {
   readonly cola: ColaEscaneo;
 }
 
-type Vista = { readonly tipo: 'lista' } | { readonly tipo: 'nuevo' } | { readonly tipo: 'editar'; readonly fila: FilaProducto };
-type Pestana = 'vender' | 'productos' | 'etiquetas' | 'respaldo' | 'diagnostico';
+type Vista =
+  | { readonly tipo: 'lista' }
+  | { readonly tipo: 'nuevo' }
+  | { readonly tipo: 'editar'; readonly fila: FilaProducto }
+  | { readonly tipo: 'importar' };
+type Pestana = 'vender' | 'productos' | 'inventario' | 'reportes' | 'etiquetas' | 'gestion' | 'ajustes' | 'respaldo' | 'diagnostico';
 
 interface Exito {
   readonly texto: string;
@@ -85,8 +95,10 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
   const [version, setVersion] = useState(0);
 
   const [categorias, setCategorias] = useState<readonly OpcionCatalogo[]>([]);
+  const [proveedores, setProveedores] = useState<readonly OpcionCatalogo[]>([]);
   const [unidades, setUnidades] = useState<readonly OpcionCatalogo[]>([]);
   const [errorCatalogo, setErrorCatalogo] = useState<string | null>(null);
+  const [versionCatalogos, setVersionCatalogos] = useState(0);
 
   const [guardando, setGuardando] = useState(false);
   const [errorForm, setErrorForm] = useState<string | null>(null);
@@ -101,9 +113,14 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
     void (async () => {
       try {
         const cliente = comoClienteTransaccional(base);
-        const [cs, us] = await Promise.all([listarCategorias(cliente), listarUnidades(cliente)]);
+        const [cs, ps, us] = await Promise.all([
+          listarCategorias(cliente),
+          listarProveedores(cliente),
+          listarUnidades(cliente),
+        ]);
         if (!vigente) return;
         setCategorias(cs);
+        setProveedores(ps);
         setUnidades(us);
       } catch (causa) {
         if (vigente) setErrorCatalogo(mensajeDe(causa));
@@ -113,7 +130,7 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
     return () => {
       vigente = false;
     };
-  }, [base]);
+  }, [base, versionCatalogos]);
 
   // ── lista, con una pausa corta para no consultar por cada tecla ───────────
   useEffect(() => {
@@ -174,6 +191,7 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
             precioMinor: valores.precioMinor,
             costoMinor: valores.costoMinor,
             categoryId: valores.categoryId,
+            supplierId: valores.supplierId,
             stockMinimo: valores.stockMinimo,
             ubicacion: valores.ubicacion,
           },
@@ -190,6 +208,7 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
             precioMinor: valores.precioMinor,
             costoMinor: valores.costoMinor,
             categoryId: valores.categoryId,
+            supplierId: valores.supplierId,
             sku: valores.sku === '' ? null : valores.sku,
             stockMinimo: valores.stockMinimo,
             ubicacion: valores.ubicacion,
@@ -240,12 +259,19 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
   return (
     <>
       <div className="mx-auto max-w-6xl px-5 pt-4">
-        <nav className="flex gap-1 border-b border-[var(--linea)]" aria-label="Secciones">
+        <nav
+          className="flex gap-1 overflow-x-auto border-b border-[var(--linea)]"
+          aria-label="Secciones"
+        >
           {(
             [
               ['vender', 'Vender'],
               ['productos', 'Productos'],
+              ['inventario', 'Inventario'],
+              ['reportes', 'Reportes'],
               ['etiquetas', 'Etiquetas'],
+              ['gestion', 'Gestión'],
+              ['ajustes', 'Ajustes'],
               ['respaldo', 'Respaldo'],
               ['diagnostico', 'Diagnóstico'],
             ] as const
@@ -255,7 +281,7 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
               type="button"
               onClick={() => setPestana(clave)}
               className={cx(
-                '-mb-px border-b-2 px-3 py-2 text-sm font-medium transition',
+                '-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition',
                 pestana === clave
                   ? 'border-[var(--acento)] text-[var(--texto)]'
                   : 'border-transparent text-[var(--suave)] hover:text-[var(--texto)]',
@@ -280,6 +306,26 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
 
       <div hidden={pestana !== 'etiquetas'} className="mx-auto max-w-6xl px-5 py-6">
         <PantallaEtiquetas base={base} />
+      </div>
+
+      <div hidden={pestana !== 'inventario'} className="mx-auto max-w-6xl px-5 py-6">
+        <PantallaInventario base={base} sesion={sesion} />
+      </div>
+
+      <div hidden={pestana !== 'reportes'} className="mx-auto max-w-6xl px-5 py-6">
+        <PantallaReportes base={base} />
+      </div>
+
+      <div hidden={pestana !== 'gestion'} className="mx-auto max-w-5xl px-5 py-6">
+        <PantallaGestion
+          base={base}
+          sesion={sesion}
+          onCambio={() => setVersionCatalogos((n) => n + 1)}
+        />
+      </div>
+
+      <div hidden={pestana !== 'ajustes'} className="mx-auto max-w-2xl px-5 py-6">
+        <PantallaAjustes base={base} />
       </div>
 
       <div hidden={pestana !== 'respaldo'} className="mx-auto max-w-3xl px-5 py-6">
@@ -311,9 +357,31 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
             filtro={filtro}
             onFiltro={setFiltro}
             onNuevo={abrirNuevo}
+            onImportar={() => {
+              setErrorForm(null);
+              setExito(null);
+              setVista({ tipo: 'importar' });
+            }}
             onEditar={abrirEditar}
             onRecargar={() => setVersion((n) => n + 1)}
             error={errorLista}
+          />
+        ) : vista.tipo === 'importar' ? (
+          <PantallaImportacion
+            base={base}
+            usuarioId={sesion.usuario.id}
+            dispositivoId={sesion.dispositivo.id}
+            categorias={categorias}
+            unidades={unidades}
+            onCancelar={() => setVista({ tipo: 'lista' })}
+            onImportados={(cantidad) => {
+              setVista({ tipo: 'lista' });
+              setVersion((n) => n + 1);
+              setExito({
+                texto: `${cantidad} ${cantidad === 1 ? 'producto importado' : 'productos importados'}.`,
+                codigo: null,
+              });
+            }}
           />
         ) : (
           <div className="flex flex-col gap-4">
@@ -336,6 +404,7 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
             <section className="rounded-xl border border-[var(--linea)] bg-[var(--tarjeta)] p-4 sm:p-6">
               <Formulario
                 categorias={categorias}
+                proveedores={proveedores}
                 unidades={unidades}
                 {...(vista.tipo === 'editar' ? { inicial: vista.fila } : {})}
                 guardando={guardando}

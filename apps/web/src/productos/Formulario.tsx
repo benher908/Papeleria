@@ -33,6 +33,7 @@ export interface ValoresFormulario {
   readonly nombre: string;
   readonly sku: string;
   readonly categoryId: string | null;
+  readonly supplierId: string | null;
   readonly unitId: string;
   readonly costoMinor: bigint;
   readonly precioMinor: bigint;
@@ -49,6 +50,7 @@ export interface ProductoParaEditar {
   readonly precioMinor: string;
   readonly costoMinor: string;
   readonly categoria: string | null;
+  readonly supplierId: string | null;
   readonly ubicacion: string | null;
   readonly unidad: string;
   /** `numeric` de la base: `'24.000'`. Se convierte con `cantidadParaEditar()`. */
@@ -57,6 +59,7 @@ export interface ProductoParaEditar {
 
 export interface PropsFormulario {
   readonly categorias: readonly OpcionCatalogo[];
+  readonly proveedores: readonly OpcionCatalogo[];
   readonly unidades: readonly OpcionCatalogo[];
   readonly inicial?: ProductoParaEditar | undefined;
   readonly guardando: boolean;
@@ -75,6 +78,7 @@ function comoCantidad(texto: string): number | null {
 
 export function Formulario({
   categorias,
+  proveedores,
   unidades,
   inicial,
   guardando,
@@ -90,6 +94,7 @@ export function Formulario({
   const [categoria, setCategoria] = useState(
     categorias.find((opcion) => opcion.nombre === inicial?.categoria)?.id ?? '',
   );
+  const [proveedor, setProveedor] = useState(inicial?.supplierId ?? '');
   const [unidad, setUnidad] = useState(
     inicial === undefined
       ? (unidades.find((opcion) => opcion.nombre === 'pieza')?.id ?? unidades[0]?.id ?? '')
@@ -150,6 +155,7 @@ export function Formulario({
       nombre: nombre.trim(),
       sku: sku.trim(),
       categoryId: categoria === '' ? null : categoria,
+      supplierId: proveedor === '' ? null : proveedor,
       unitId: unidad,
       costoMinor: costoFinal,
       precioMinor: precioFinal,
@@ -191,6 +197,25 @@ export function Formulario({
           >
             <option value="">Sin categoría</option>
             {categorias.map((opcion) => (
+              <option key={opcion.id} value={opcion.id}>
+                {opcion.nombre}
+              </option>
+            ))}
+          </Seleccion>
+        </Campo>
+
+        <Campo
+          etiqueta="Proveedor"
+          para={`${id}-proveedor`}
+          ayuda="Opcional. Se administra en Gestión."
+        >
+          <Seleccion
+            id={`${id}-proveedor`}
+            value={proveedor}
+            onChange={(e) => setProveedor(e.target.value)}
+          >
+            <option value="">Sin proveedor</option>
+            {proveedores.map((opcion) => (
               <option key={opcion.id} value={opcion.id}>
                 {opcion.nombre}
               </option>

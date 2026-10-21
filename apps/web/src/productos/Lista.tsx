@@ -20,6 +20,7 @@ export interface PropsLista {
   readonly filtro: string;
   readonly onFiltro: (texto: string) => void;
   readonly onNuevo: () => void;
+  readonly onImportar: () => void;
   readonly onEditar: (fila: FilaProducto) => void;
   readonly onRecargar: () => void;
   readonly error: string | null;
@@ -35,6 +36,7 @@ export function Lista({
   filtro,
   onFiltro,
   onNuevo,
+  onImportar,
   onEditar,
   onRecargar,
   error,
@@ -60,6 +62,9 @@ export function Lista({
             className="w-64"
             type="search"
           />
+          <Boton variante="secundario" onClick={onImportar}>
+            Importar CSV
+          </Boton>
           <Boton onClick={onNuevo}>Nuevo producto</Boton>
         </div>
       </div>

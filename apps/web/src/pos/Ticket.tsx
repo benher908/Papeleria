@@ -23,6 +23,7 @@ import { pesos } from '../productos/formato';
 
 export interface DatosNegocio {
   readonly nombre: string;
+  readonly rfc: string;
   readonly direccion: string;
   readonly telefono: string;
 }
@@ -56,6 +57,7 @@ export function Ticket({
     >
       <div className="text-center">
         <p className="text-[12px] font-bold uppercase">{negocio.nombre || 'Papelería'}</p>
+        {negocio.rfc === '' ? null : <p>RFC: {negocio.rfc}</p>}
         {negocio.direccion === '' ? null : <p>{negocio.direccion}</p>}
         {negocio.telefono === '' ? null : <p>Tel. {negocio.telefono}</p>}
       </div>
@@ -158,6 +160,7 @@ export function CorteZ({
     >
       <div className="text-center">
         <p className="text-[12px] font-bold uppercase">{negocio.nombre || 'Papelería'}</p>
+        {negocio.rfc === '' ? null : <p>RFC: {negocio.rfc}</p>}
         <p className="text-[11px] font-bold">CORTE Z</p>
         <p>{cerrado.toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</p>
         <p className="text-[9px]">Turno {cierre.turnoId.slice(0, 8)}</p>

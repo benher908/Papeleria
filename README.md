@@ -59,6 +59,13 @@ y romperla a mitad para ver que no queda nada a medias.
 
 ---
 
+## API y sincronización (en preparación)
+
+`apps/api` contiene el primer endpoint remoto (`GET /health` y `POST /sync/push`).
+Se ejecuta con `DATABASE_URL` apuntando a PostgreSQL/Supabase. La sincronización
+completa de estado y autenticación remota se habilita después de aplicar la migración
+`0011_sync_server.sql` y conectar el outbox del navegador.
+
 ## Requisitos
 
 - **Node 22+** — ya lo tienes (v22.13.1)

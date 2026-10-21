@@ -65,12 +65,13 @@ export async function recibirMercancia(
     payload: async (_tx, evento) => ({ lineas: lineas.map((l) => ({ ...l, costoUnitarioMinor: l.costoUnitarioMinor.toString() })), ocurrido_at: evento.occurred_at }),
     autorizar: async (_e, tx) => autorizar(tx, { usuarioId: contexto.usuarioId, dispositivoId: contexto.dispositivoId, permiso: 'stock:ajustar', recurso: { tipo: 'movimiento', valor_stock_afectado_minor: 0 }, ...(contexto.ahora === undefined ? {} : { ahora: contexto.ahora }) }),
     aplicarEstado: async (tx, evento) => {
+      const referencia = uuidV7();
       for (const linea of lineas) {
         const producto = await tx.query<{ qty: unknown; costo: unknown }>(`SELECT COALESCE(s.qty_base, 0) qty, p.costo_promedio_minor costo FROM products p LEFT JOIN stock_levels s ON s.product_id = p.id WHERE p.id = $1 AND p.tracks_stock`, [linea.productoId]);
         const actual = producto.rows[0]; if (!actual) throw new ErrorInventario('El producto de la recepción no existe o no lleva inventario.');
         const previo = Number(actual.qty); const costoPrevio = BigInt(String(actual.costo));
         const nuevoCosto = Math.round((Number(costoPrevio) * Math.max(previo, 0) + Number(linea.costoUnitarioMinor) * linea.cantidad) / (Math.max(previo, 0) + linea.cantidad));
-        await tx.query(`INSERT INTO stock_movements (id, product_id, qty, qty_base, motivo, ref_type, ref_id, costo_unitario_minor, notas, user_id, device_id, ocurrido_at) VALUES ($1,$2,$3,$3,'compra_recepcion','purchase',$4,$5,$6,$7,$8,$9)`, [uuidV7(), linea.productoId, String(linea.cantidad), evento.event_id, linea.costoUnitarioMinor.toString(), linea.notas ?? null, contexto.usuarioId, contexto.dispositivoId, evento.occurred_at]);
+        await tx.query(`INSERT INTO stock_movements (id, product_id, qty, qty_base, motivo, ref_type, ref_id, costo_unitario_minor, notas, user_id, device_id, ocurrido_at) VALUES ($1,$2,$3,$3,'compra_recepcion','purchase',$4,$5,$6,$7,$8,$9)`, [uuidV7(), linea.productoId, String(linea.cantidad), referencia, linea.costoUnitarioMinor.toString(), linea.notas ?? null, contexto.usuarioId, contexto.dispositivoId, evento.occurred_at]);
         await tx.query('UPDATE products SET costo_promedio_minor = $2, costo_minor = $2, actualizado_at = now() WHERE id = $1', [linea.productoId, String(nuevoCosto)]);
       }
     }, auditoria: { accion: 'stock.received', entidad: 'stock_movements' },
@@ -90,7 +91,7 @@ export async function ajustarExistencia(
     aplicarEstado: async (tx, e) => {
       const p = await tx.query<{ costo_promedio_minor: unknown }>('SELECT costo_promedio_minor FROM products WHERE id = $1 AND tracks_stock', [datos.productoId]);
       if (!p.rows[0]) throw new ErrorInventario('El producto no existe o no lleva inventario.');
-      await tx.query(`INSERT INTO stock_movements (id,product_id,qty,qty_base,motivo,ref_type,ref_id,costo_unitario_minor,notas,user_id,device_id,ocurrido_at) VALUES ($1,$2,$3,$3,$4,'loss',$5,$6,$7,$8,$9,$10)`, [uuidV7(), datos.productoId, String(datos.cantidad), datos.motivo, e.event_id, String(p.rows[0].costo_promedio_minor), datos.notas.trim(), contexto.usuarioId, contexto.dispositivoId, e.occurred_at]);
+      await tx.query(`INSERT INTO stock_movements (id,product_id,qty,qty_base,motivo,ref_type,ref_id,costo_unitario_minor,notas,user_id,device_id,ocurrido_at) VALUES ($1,$2,$3,$3,$4,'loss',$5,$6,$7,$8,$9,$10)`, [uuidV7(), datos.productoId, String(datos.cantidad), datos.motivo, uuidV7(), String(p.rows[0].costo_promedio_minor), datos.notas.trim(), contexto.usuarioId, contexto.dispositivoId, e.occurred_at]);
     }, auditoria: { accion: 'stock.adjusted', entidad: 'stock_movements', entidadId: datos.productoId },
   });
 }
@@ -110,7 +111,7 @@ export async function aplicarConteo(
       const diferenciaPct = esperado === 0 ? (datos.contado === 0 ? 0 : 100) : Math.abs((datos.contado - esperado) / esperado) * 100;
       return exigirObligaciones(await autorizar(tx, { usuarioId: contexto.usuarioId, dispositivoId: contexto.dispositivoId, permiso: 'stock:conteo', recurso: { tipo: 'conteo', diferencia_pct: diferenciaPct, conteo_ya_aplicado: false }, ...(contexto.ahora === undefined ? {} : { ahora: contexto.ahora }) }), { motivo: datos.notas ?? null, queFalta: 'Explica la diferencia encontrada antes de aplicar el conteo.' });
     },
-    aplicarEstado: async (tx, e) => { const r = await tx.query<{ costo_promedio_minor: unknown }>('SELECT costo_promedio_minor FROM products WHERE id=$1 AND tracks_stock', [datos.productoId]); if (!r.rows[0]) throw new ErrorInventario('El producto no existe o no lleva inventario.'); const esperado = await tx.query<{ stock: unknown }>('SELECT COALESCE(qty_base,0) stock FROM stock_levels WHERE product_id=$1', [datos.productoId]); const diferencia = datos.contado - Number(esperado.rows[0]?.stock ?? 0); if (diferencia !== 0) await tx.query(`INSERT INTO stock_movements (id,product_id,qty,qty_base,motivo,ref_type,ref_id,costo_unitario_minor,notas,user_id,device_id,ocurrido_at) VALUES ($1,$2,$3,$3,'conteo_fisico','count',$4,$5,$6,$7,$8,$9)`, [uuidV7(), datos.productoId, String(diferencia), e.event_id, String(r.rows[0].costo_promedio_minor), datos.notas ?? null, contexto.usuarioId, contexto.dispositivoId, e.occurred_at]); },
+    aplicarEstado: async (tx, e) => { const r = await tx.query<{ costo_promedio_minor: unknown }>('SELECT costo_promedio_minor FROM products WHERE id=$1 AND tracks_stock', [datos.productoId]); if (!r.rows[0]) throw new ErrorInventario('El producto no existe o no lleva inventario.'); const esperado = await tx.query<{ stock: unknown }>('SELECT COALESCE(qty_base,0) stock FROM stock_levels WHERE product_id=$1', [datos.productoId]); const diferencia = datos.contado - Number(esperado.rows[0]?.stock ?? 0); if (diferencia !== 0) await tx.query(`INSERT INTO stock_movements (id,product_id,qty,qty_base,motivo,ref_type,ref_id,costo_unitario_minor,notas,user_id,device_id,ocurrido_at) VALUES ($1,$2,$3,$3,'conteo_fisico','count',$4,$5,$6,$7,$8,$9)`, [uuidV7(), datos.productoId, String(diferencia), uuidV7(), String(r.rows[0].costo_promedio_minor), datos.notas ?? null, contexto.usuarioId, contexto.dispositivoId, e.occurred_at]); },
     auditoria: { accion: 'stock.counted', entidad: 'stock_movements', entidadId: datos.productoId },
   });
 }

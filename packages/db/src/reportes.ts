@@ -8,7 +8,7 @@ export async function resumenVentas(cliente: ClienteSql, desde: string, hasta: s
     `SELECT (SELECT count(*) FROM sales s WHERE s.estado='completada' AND s.ocurrido_at >= $1::timestamptz AND s.ocurrido_at < $2::timestamptz) tickets,
             (SELECT COALESCE(sum(total_minor),0) FROM sales s WHERE s.estado='completada' AND s.ocurrido_at >= $1::timestamptz AND s.ocurrido_at < $2::timestamptz) ventas,
             (SELECT COALESCE(sum(descuento_minor),0) FROM sales s WHERE s.estado='completada' AND s.ocurrido_at >= $1::timestamptz AND s.ocurrido_at < $2::timestamptz) descuentos,
-            (SELECT COALESCE(sum(l.total_linea_minor - l.costo_unitario_minor * l.qty_base),0) FROM sale_lines l JOIN sales s ON s.id=l.sale_id WHERE s.estado='completada' AND s.ocurrido_at >= $1::timestamptz AND s.ocurrido_at < $2::timestamptz) utilidad`, [desde, hasta]);
+            (SELECT COALESCE(sum(l.total_linea_minor - (l.costo_unitario_minor * l.qty_base)::bigint),0)::bigint FROM sale_lines l JOIN sales s ON s.id=l.sale_id WHERE s.estado='completada' AND s.ocurrido_at >= $1::timestamptz AND s.ocurrido_at < $2::timestamptz) utilidad`, [desde, hasta]);
   const r = rows[0] ?? { tickets: 0, ventas: 0, descuentos: 0, utilidad: 0 };
   return { tickets: Number(r.tickets), ventasMinor: BigInt(String(r.ventas)), descuentosMinor: BigInt(String(r.descuentos)), utilidadMinor: BigInt(String(r.utilidad)) };
 }

@@ -1,10 +1,26 @@
 import { createServer } from 'node:http';
 import { Pool } from 'pg';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { cargarMigraciones } from '@papeleria/db/node';
+import { adaptarPg, migrar } from '@papeleria/db';
 
 const port = Number(process.env.PORT ?? 8787);
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('Falta DATABASE_URL.');
 const pool = new Pool({ connectionString: databaseUrl, max: 5, ssl: { rejectUnauthorized: false } });
+
+async function aplicarMigraciones(): Promise<void> {
+  const cliente = await pool.connect();
+  try {
+    const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '../../../packages/db/migrations');
+    const migraciones = await cargarMigraciones(raiz);
+    await migrar(adaptarPg(cliente), migraciones);
+    console.log(`Migraciones listas: ${migraciones.length}`);
+  } finally {
+    cliente.release();
+  }
+}
 
 async function jsonBody(request: import('node:http').IncomingMessage): Promise<unknown> {
   let texto = '';
@@ -37,4 +53,6 @@ const server = createServer(async (request, response) => {
     responder(response, 404, { error: 'Ruta no encontrada.' });
   } catch (error) { responder(response, 500, { error: error instanceof Error ? error.message : String(error) }); }
 });
-server.listen(port, '0.0.0.0', () => console.log(`Papeleria API escuchando en ${port}`));
+void aplicarMigraciones()
+  .then(() => server.listen(port, '0.0.0.0', () => console.log(`Papeleria API escuchando en ${port}`)))
+  .catch((error) => { console.error('No se pudieron aplicar las migraciones.', error); process.exitCode = 1; });

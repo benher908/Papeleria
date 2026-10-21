@@ -30,6 +30,7 @@ import {
 
 import { enTransaccionDuradera } from '../db/cliente';
 import type { BaseLocal } from '../db/baseLocal';
+import { emparejarDispositivo } from '../sync/cliente';
 import { aviso, crear, esperar, mensaje } from '../ui';
 import {
   guardarDispositivo,
@@ -73,8 +74,8 @@ export function montarEntrada(
     'p',
     'descripcion',
     opciones.hayCuenta
-      ? 'La cuenta y la base viven en este equipo. Nada de esto sale del PC.'
-      : 'Todavía no hay ninguna cuenta. La que crees aquí es la de la dueña: se guarda en este navegador, sin servidor de por medio.',
+      ? 'La base se guarda en este equipo. Si lo vinculas, los cambios se comparten con tus otros dispositivos.'
+      : 'La cuenta inicial y los datos se guardan en este navegador. Puedes vincular este equipo para compartir cambios.',
   );
   caja.append(titulo, descripcion);
 
@@ -98,10 +99,13 @@ export function montarEntrada(
   const campoRepeticion = opciones.hayCuenta
     ? undefined
     : campo('Repite la contraseña', 'repeticion', 'password', 'new-password');
+  const campoCodigoSync = campo('Código para vincular otro dispositivo (opcional)', 'codigo_sync', 'password', 'new-password');
 
   if (campoNombre) formulario.append(campoNombre.etiqueta);
   formulario.append(campoUsuario.etiqueta, campoContrasena.etiqueta);
   if (campoRepeticion) formulario.append(campoRepeticion.etiqueta);
+  formulario.append(campoCodigoSync.etiqueta);
+  formulario.append(crear('p', 'nota', 'Para sincronizar, pega el código de vinculación que configuraste en Render. Si lo dejas vacío, este equipo funciona de forma local.'));
 
   // Ayuda en vivo sólo al crear: al entrar, decir «te faltan caracteres» no ayuda a nadie.
   const ayuda = crear('ul', 'problemas');
@@ -180,10 +184,11 @@ export function montarEntrada(
 
       const usuario = campoUsuario.entrada.value.trim();
       const contrasena = campoContrasena.entrada.value;
+      const codigoSync = campoCodigoSync.entrada.value.trim();
 
       try {
-        if (!opciones.hayCuenta) return await primerArranque(usuario, contrasena);
-        await iniciarSesion(usuario, contrasena);
+        if (!opciones.hayCuenta) return await primerArranque(usuario, contrasena, codigoSync);
+        await iniciarSesion(usuario, contrasena, codigoSync);
       } catch (causa) {
         mostrarCausa('No se pudo completar', causa);
       } finally {
@@ -194,7 +199,7 @@ export function montarEntrada(
   });
 
   /** Crear la cuenta y entrar, todo o nada. */
-  async function primerArranque(usuario: string, contrasena: string): Promise<void> {
+  async function primerArranque(usuario: string, contrasena: string, codigoSync: string): Promise<void> {
     if (contrasena !== campoRepeticion?.entrada.value) {
       errores.append(
         aviso('Las dos contraseñas no coinciden', ['Vuelve a escribirla en el segundo campo.']),
@@ -240,10 +245,11 @@ export function montarEntrada(
       return;
     }
 
+    if (codigoSync) await emparejarDispositivo(dispositivo.id, codigoSync);
     recordarSesion(resultado, dispositivo);
   }
 
-  async function iniciarSesion(usuario: string, contrasena: string): Promise<void> {
+  async function iniciarSesion(usuario: string, contrasena: string, codigoSync: string): Promise<void> {
     if (fallos > 0) {
       // El retraso va aquí, ANTES de mirar la contraseña: si se aplicara sólo al fallar,
       // quien prueba contraseñas podría distinguir el acierto por lo que tarda.
@@ -262,6 +268,7 @@ export function montarEntrada(
     );
 
     if (resultado.ok) {
+      if (codigoSync) await emparejarDispositivo(dispositivo.id, codigoSync);
       recordarSesion(resultado, dispositivo);
       return;
     }

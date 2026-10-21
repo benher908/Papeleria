@@ -37,3 +37,4 @@ export * from './obligaciones';
 export * from './eventos';
 export * from './autorizacion';
 export * from './auth';
+export * from './sync';

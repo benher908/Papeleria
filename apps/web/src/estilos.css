@@ -277,6 +277,22 @@ td:nth-child(3) {
   flex: 1;
 }
 
+@media (max-width: 640px) {
+  .barra {
+    flex-wrap: wrap;
+    gap: 0.45rem 0.65rem;
+    padding: 0.55rem 0.75rem;
+  }
+
+  .barra .crecer {
+    display: none;
+  }
+
+  .barra .donde {
+    font-size: 0.7rem;
+  }
+}
+
 .entrada {
   max-width: 30rem;
   margin: 3rem auto 4rem;

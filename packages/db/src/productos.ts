@@ -641,30 +641,35 @@ export async function listarCategorias(
 export async function crearCategoria(
   cliente: ClienteTransaccional,
   datos: { nombre: string; parentId?: string | null },
-  _contexto: ContextoCatalogo,
+  contexto: ContextoCatalogo,
 ): Promise<{ id: string }> {
   const nombre = datos.nombre.trim();
   if (nombre === '') throw new ErrorProducto('La categoría necesita un nombre.');
-
-  return cliente.transaction(async (tx) => {
-    // Construir el path según el padre
-    let path = nombre.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-    if (datos.parentId) {
-      const padre = await tx.query<{ path: string }>(
-        `SELECT path FROM categories WHERE id = $1 AND deleted_at IS NULL`, [datos.parentId]
-      );
-      const filaPadre = padre.rows[0];
-      if (filaPadre === undefined) throw new ErrorProducto('La categoría padre no existe.');
-      path = `${filaPadre.path}/${path}`;
-    }
-
-    const id = uuidV7();
-    await tx.query(
-      `INSERT INTO categories (id, parent_id, nombre, path) VALUES ($1, $2, $3, $4)`,
-      [id, datos.parentId ?? null, nombre, path]
-    );
-    return { id };
+  const id = uuidV7();
+  const evento = await emitirEvento<'category.created', { id: string; parent_id: string | null; nombre: string; path: string }>(cliente, {
+    tipo: 'category.created', dispositivoId: contexto.dispositivoId, usuarioId: contexto.usuarioId,
+    ...(contexto.ahora === undefined ? {} : { ahora: () => contexto.ahora! }),
+    autorizar: (_e, tx) => autorizar(tx, { usuarioId: contexto.usuarioId,
+      dispositivoId: contexto.dispositivoId, permiso: 'productos:crear', recurso: { tipo: 'producto', id },
+      ...(contexto.ahora === undefined ? {} : { ahora: contexto.ahora }) }),
+    payload: async (tx) => {
+      let path = nombre.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      if (datos.parentId) {
+        const padre = await tx.query<{ path: string }>(
+          'SELECT path FROM categories WHERE id=$1 AND deleted_at IS NULL', [datos.parentId],
+        );
+        if (!padre.rows[0]) throw new ErrorProducto('La categoría padre no existe.');
+        path = `${padre.rows[0].path}/${path}`;
+      }
+      return { id, parent_id: datos.parentId ?? null, nombre, path };
+    },
+    aplicarEstado: async (tx, e) => { const p = e.payload; await tx.query(
+      'INSERT INTO categories (id,parent_id,nombre,path) VALUES ($1,$2,$3,$4)',
+      [p.id,p.parent_id,p.nombre,p.path],
+    ); },
+    auditoria: { accion: 'category.created', entidad: 'categories', entidadId: id },
   });
+  return { id: evento.payload.id };
 }
 
 export async function listarProveedores(
@@ -679,39 +684,58 @@ export async function listarProveedores(
 export async function crearProveedor(
   cliente: ClienteTransaccional,
   datos: { nombre: string; telefono?: string | null; notas?: string | null },
-  _contexto: ContextoCatalogo,
+  contexto: ContextoCatalogo,
 ): Promise<{ id: string }> {
   const nombre = datos.nombre.trim();
   if (nombre === '') throw new ErrorProducto('El proveedor necesita un nombre.');
 
-  return cliente.transaction(async (tx) => {
-    const id = uuidV7();
-    await tx.query(
-      `INSERT INTO suppliers (id, nombre, telefono, notas) VALUES ($1, $2, $3, $4)`,
-      [id, nombre, datos.telefono?.trim() || null, datos.notas?.trim() || null]
-    );
-    return { id };
+  const id = uuidV7();
+  const evento = await emitirEvento<'supplier.created', { id: string; nombre: string; telefono: string | null; notas: string | null }>(cliente, {
+    tipo: 'supplier.created', dispositivoId: contexto.dispositivoId, usuarioId: contexto.usuarioId,
+    ...(contexto.ahora === undefined ? {} : { ahora: () => contexto.ahora! }),
+    autorizar: (_e, tx) => autorizar(tx, { usuarioId: contexto.usuarioId,
+      dispositivoId: contexto.dispositivoId, permiso: 'productos:crear', recurso: { tipo: 'producto', id },
+      ...(contexto.ahora === undefined ? {} : { ahora: contexto.ahora }) }),
+    payload: async () => ({ id, nombre, telefono: datos.telefono?.trim() || null,
+      notas: datos.notas?.trim() || null }),
+    aplicarEstado: async (tx, e) => { const p = e.payload; await tx.query(
+      'INSERT INTO suppliers (id,nombre,telefono,notas) VALUES ($1,$2,$3,$4)',
+      [p.id,p.nombre,p.telefono,p.notas],
+    ); },
+    auditoria: { accion: 'supplier.created', entidad: 'suppliers', entidadId: id },
   });
+  return { id: evento.payload.id };
 }
 
 export async function actualizarProveedor(
   cliente: ClienteTransaccional,
   id: string,
   cambios: { nombre?: string; telefono?: string | null; notas?: string | null },
-  _contexto: ContextoCatalogo,
+  contexto: ContextoCatalogo,
 ): Promise<void> {
-  await cliente.transaction(async (tx) => {
-    const actual = await tx.query<{ nombre: string; telefono: string | null; notas: string | null }>(
-      `SELECT nombre, telefono, notas FROM suppliers WHERE id = $1 AND deleted_at IS NULL`, [id]
-    );
-    const fila = actual.rows[0];
-    if (fila === undefined) throw new ErrorProducto('El proveedor no existe.');
-    const nombre = cambios.nombre?.trim() ?? fila.nombre;
-    if (nombre === '') throw new ErrorProducto('El proveedor necesita un nombre.');
-    await tx.query(
-      `UPDATE suppliers SET nombre = $2, telefono = $3, notas = $4 WHERE id = $1`,
-      [id, nombre, cambios.telefono === undefined ? fila.telefono : (cambios.telefono?.trim() || null), cambios.notas === undefined ? fila.notas : (cambios.notas?.trim() || null)]
-    );
+  await emitirEvento<'supplier.updated', { id: string; antes: { nombre: string; telefono: string | null; notas: string | null }; despues: { nombre: string; telefono: string | null; notas: string | null } }>(cliente, {
+    tipo: 'supplier.updated', dispositivoId: contexto.dispositivoId, usuarioId: contexto.usuarioId,
+    ...(contexto.ahora === undefined ? {} : { ahora: () => contexto.ahora! }),
+    autorizar: (_e, tx) => autorizar(tx, { usuarioId: contexto.usuarioId,
+      dispositivoId: contexto.dispositivoId, permiso: 'productos:editar', recurso: { tipo: 'producto', id },
+      ...(contexto.ahora === undefined ? {} : { ahora: contexto.ahora }) }),
+    payload: async (tx) => {
+      const actual = await tx.query<{ nombre: string; telefono: string | null; notas: string | null }>(
+        'SELECT nombre,telefono,notas FROM suppliers WHERE id=$1 AND deleted_at IS NULL', [id],
+      );
+      const fila = actual.rows[0];
+      if (!fila) throw new ErrorProducto('El proveedor no existe.');
+      const despues = { nombre: cambios.nombre?.trim() ?? fila.nombre,
+        telefono: cambios.telefono === undefined ? fila.telefono : (cambios.telefono?.trim() || null),
+        notas: cambios.notas === undefined ? fila.notas : (cambios.notas?.trim() || null) };
+      if (!despues.nombre) throw new ErrorProducto('El proveedor necesita un nombre.');
+      return { id, antes: fila, despues };
+    },
+    aplicarEstado: async (tx, e) => { const p = e.payload; await tx.query(
+      'UPDATE suppliers SET nombre=$2,telefono=$3,notas=$4 WHERE id=$1',
+      [p.id,p.despues.nombre,p.despues.telefono,p.despues.notas],
+    ); },
+    auditoria: { accion: 'supplier.updated', entidad: 'suppliers', entidadId: id },
   });
 }
 
@@ -727,27 +751,49 @@ export async function listarUnidades(
 export async function crearUnidad(
   cliente: ClienteTransaccional,
   datos: { nombre: string; abreviatura: string },
-  _contexto: ContextoCatalogo,
+  contexto: ContextoCatalogo,
 ): Promise<{ id: string }> {
   const nombre = datos.nombre.trim();
   const abreviatura = datos.abreviatura.trim();
   if (nombre === '' || abreviatura === '') throw new ErrorProducto('La unidad necesita nombre y abreviatura.');
-  return cliente.transaction(async (tx) => {
-    const id = uuidV7();
-    await tx.query('INSERT INTO units (id, nombre, abreviatura) VALUES ($1, $2, $3)', [id, nombre, abreviatura]);
-    return { id };
+  const id = uuidV7();
+  const evento = await emitirEvento<'unit.created', { id: string; nombre: string; abreviatura: string }>(cliente, {
+    tipo: 'unit.created', dispositivoId: contexto.dispositivoId, usuarioId: contexto.usuarioId,
+    ...(contexto.ahora === undefined ? {} : { ahora: () => contexto.ahora! }),
+    autorizar: (_e, tx) => autorizar(tx, { usuarioId: contexto.usuarioId,
+      dispositivoId: contexto.dispositivoId, permiso: 'productos:crear', recurso: { tipo: 'producto', id },
+      ...(contexto.ahora === undefined ? {} : { ahora: contexto.ahora }) }),
+    payload: async () => ({ id, nombre, abreviatura }),
+    aplicarEstado: async (tx, e) => { const p = e.payload; await tx.query(
+      'INSERT INTO units (id,nombre,abreviatura) VALUES ($1,$2,$3)', [p.id,p.nombre,p.abreviatura],
+    ); },
+    auditoria: { accion: 'unit.created', entidad: 'units', entidadId: id },
   });
+  return { id: evento.payload.id };
 }
 
 export async function actualizarUnidad(
-  cliente: ClienteTransaccional, id: string, datos: { nombre: string; abreviatura: string }, _contexto: ContextoCatalogo,
+  cliente: ClienteTransaccional, id: string, datos: { nombre: string; abreviatura: string }, contexto: ContextoCatalogo,
 ): Promise<void> {
   const nombre = datos.nombre.trim(); const abreviatura = datos.abreviatura.trim();
   if (nombre === '' || abreviatura === '') throw new ErrorProducto('La unidad necesita nombre y abreviatura.');
-  await cliente.transaction(async (tx) => {
-    const existe = await tx.query<{ id: string }>('SELECT id FROM units WHERE id = $1', [id]);
-    if (existe.rows[0] === undefined) throw new ErrorProducto('La unidad no existe.');
-    await tx.query('UPDATE units SET nombre = $2, abreviatura = $3 WHERE id = $1', [id, nombre, abreviatura]);
+  await emitirEvento<'unit.updated', { id: string; antes: { nombre: string; abreviatura: string }; despues: { nombre: string; abreviatura: string } }>(cliente, {
+    tipo: 'unit.updated', dispositivoId: contexto.dispositivoId, usuarioId: contexto.usuarioId,
+    ...(contexto.ahora === undefined ? {} : { ahora: () => contexto.ahora! }),
+    autorizar: (_e, tx) => autorizar(tx, { usuarioId: contexto.usuarioId,
+      dispositivoId: contexto.dispositivoId, permiso: 'productos:editar', recurso: { tipo: 'producto', id },
+      ...(contexto.ahora === undefined ? {} : { ahora: contexto.ahora }) }),
+    payload: async (tx) => {
+      const existe = await tx.query<{ nombre: string; abreviatura: string }>(
+        'SELECT nombre,abreviatura FROM units WHERE id=$1', [id],
+      );
+      if (!existe.rows[0]) throw new ErrorProducto('La unidad no existe.');
+      return { id, antes: existe.rows[0], despues: { nombre, abreviatura } };
+    },
+    aplicarEstado: async (tx, e) => { const p = e.payload; await tx.query(
+      'UPDATE units SET nombre=$2,abreviatura=$3 WHERE id=$1', [p.id,p.despues.nombre,p.despues.abreviatura],
+    ); },
+    auditoria: { accion: 'unit.updated', entidad: 'units', entidadId: id },
   });
 }
 

@@ -31,6 +31,7 @@ import { comoClienteTransaccional, enTransaccionDuradera } from './db/cliente';
 import { crearColaEscaneo } from './escaneo/cola';
 import { instalarLectorHid } from './escaneo/hid';
 import { montarProductos } from './productos/montar';
+import { iniciarSincronizacion } from './sync/cliente';
 import { aviso, capasQueFaltan, crear, mensaje } from './ui';
 
 export async function montarApp(raiz: HTMLElement): Promise<void> {
@@ -72,6 +73,7 @@ export async function montarApp(raiz: HTMLElement): Promise<void> {
    * Enter se comiera el envío del formulario.
    */
   let desinstalarHid: (() => void) | null = null;
+  let detenerSync: (() => void) | null = null;
 
   /**
    * La raíz de React de la zona de trabajo.
@@ -84,6 +86,7 @@ export async function montarApp(raiz: HTMLElement): Promise<void> {
 
   function mostrarCaja(actual: SesionIniciada): void {
     sesion = actual;
+    detenerSync?.();
     raizReact?.unmount();
     raizReact = null;
     raiz.replaceChildren();
@@ -93,12 +96,18 @@ export async function montarApp(raiz: HTMLElement): Promise<void> {
     desinstalarHid = instalarLectorHid(cola);
 
     const barra = crear('div', 'barra');
+    const estadoSync = crear('span', 'donde', 'Preparando sincronización…');
+    estadoSync.setAttribute('aria-live', 'polite');
     barra.append(
       crear('strong', 'quien', actual.usuario.nombre),
       crear('span', 'donde', `caja ${actual.dispositivo.codigo}`),
+      estadoSync,
       crear('span', 'crecer'),
       botonSalir(() => mostrarEntrada()),
     );
+    detenerSync = iniciarSincronizacion(base, actual.dispositivo.id, (estado) => {
+      estadoSync.textContent = estado;
+    });
     raiz.append(barra);
 
     const contenedor = crear('div');
@@ -108,6 +117,8 @@ export async function montarApp(raiz: HTMLElement): Promise<void> {
 
   function mostrarEntrada(nota?: string): void {
     sesion = null;
+    detenerSync?.();
+    detenerSync = null;
     raizReact?.unmount();
     raizReact = null;
     desinstalarHid?.();

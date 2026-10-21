@@ -4,9 +4,6 @@
   "version": "0.0.0",
   "type": "module",
   "packageManager": "pnpm@12.14.0",
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
-  },
   "engines": {
     "node": ">=22"
   },

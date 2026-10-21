@@ -3,7 +3,8 @@ services:
     name: papeleria-api
     runtime: node
     plan: free
-    buildCommand: pnpm install --no-frozen-lockfile --allow-build esbuild
+    rootDir: .
+    buildCommand: pnpm install --no-frozen-lockfile
     startCommand: pnpm --filter @papeleria/api start
     envVars:
       - key: DATABASE_URL

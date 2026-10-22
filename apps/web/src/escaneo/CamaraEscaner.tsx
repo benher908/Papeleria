@@ -16,10 +16,10 @@ export function CamaraEscaner({ cola, alCodigo }: { readonly cola?: ColaEscaneo;
     setError(null);
     try {
       const lector = new BrowserMultiFormatReader();
-      const dispositivos = await BrowserMultiFormatReader.listVideoInputDevices();
-      const preferida = dispositivos.find((d) => /back|trasera|environment/i.test(d.label)) ?? dispositivos[0];
-      if (!preferida || !video.current) throw new Error('No se encontró una cámara disponible.');
-      controles.current = await lector.decodeFromVideoDevice(preferida.deviceId, video.current, (resultado) => {
+      if (!video.current) throw new Error('No se pudo preparar la vista de cámara.');
+      // En Android algunos navegadores no enumeran cámaras hasta que se solicita
+      // getUserMedia. Pedir la trasera directamente hace aparecer el permiso.
+      controles.current = await lector.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } } }, video.current, (resultado) => {
         const codigo = resultado?.getText().trim();
         if (!codigo) return;
         const symbology = resultado!.getBarcodeFormat().toString();

@@ -279,6 +279,15 @@ export function montarEntrada(
         } else {
           await tx.query('UPDATE users SET password_hash = $1, nombre = $2, is_activo = TRUE WHERE username = $3', [await hashearContrasena(contrasena), nombreCentral ?? usuario, usuario]);
         }
+        // La sesión central también debe conservar el permiso de dueña en esta
+        // base local, que es la que autoriza acciones mientras se trabaja offline.
+        await tx.query(
+          `INSERT INTO user_roles (user_id, role_id)
+           SELECT id, (SELECT id FROM roles WHERE clave = 'dueno')
+           FROM users WHERE username = $1
+           ON CONFLICT (user_id, role_id) DO NOTHING`,
+          [usuario],
+        );
       });
     }
 

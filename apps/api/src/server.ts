@@ -105,7 +105,6 @@ async function usuarioAutenticado(request: IncomingMessage): Promise<string | nu
   const token = (typeof header === 'string' ? header : undefined) ?? request.headers.authorization?.match(/^Bearer\s+(.+)$/)?.[1];
   if (!token) return null;
   try {
-    if (limitado(request)) return responder(response, 429, { error: 'Demasiadas solicitudes; espera un minuto.' });
     const { payload } = await jwtVerify(token, supabaseKeys, { issuer: `${supabaseUrl!.replace(/\/$/, '')}/auth/v1`, audience: 'authenticated' });
     return typeof payload.sub === 'string' ? payload.sub : null;
   } catch { return null; }
@@ -113,6 +112,7 @@ async function usuarioAutenticado(request: IncomingMessage): Promise<string | nu
 
 const server = createServer(async (request, response) => {
   try {
+    if (limitado(request)) return responder(response, 429, { error: 'Demasiadas solicitudes; espera un minuto.' });
     if (request.method === 'OPTIONS') return responder(response, 204, null);
     if (request.method === 'GET' && request.url === '/health') {
       return responder(response, 200, { ok: true, service: 'papeleria-api' });

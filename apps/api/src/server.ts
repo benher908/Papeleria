@@ -76,7 +76,7 @@ function limitado(request: IncomingMessage): boolean {
   const previo = intentos.get(ip);
   if (!previo || ahora >= previo.hasta) { intentos.set(ip, { cuenta: 1, hasta: ahora + 60_000 }); return false; }
   previo.cuenta += 1;
-  return previo.cuenta > 60;
+  return previo.cuenta > 360;
 }
 
 function esObjeto(valor: unknown): valor is Record<string, unknown> {
@@ -136,6 +136,57 @@ const server = createServer(async (request, response) => {
         [body.device_id, sha256(token), userId],
       );
       return responder(response, 200, { token, device_id: body.device_id });
+    }
+
+    if (request.method === 'POST' && request.url === '/scanner/session') {
+      const userId = await usuarioAutenticado(request);
+      if (!userId) return responder(response, 401, { error: 'Sesión de Supabase inválida.' });
+      const body = await jsonBody(request);
+      if (!esObjeto(body) || typeof body.device_id !== 'string') return responder(response, 400, { error: 'Dispositivo inválido.' });
+      const deviceId = await dispositivoAutenticadoDeUsuario(request, userId);
+      if (deviceId !== body.device_id) return responder(response, 401, { error: 'La caja no está vinculada a esta cuenta.' });
+      const code = randomBytes(5).toString('hex').toUpperCase();
+      await pool.query(
+        `INSERT INTO remote_scanner_sessions (code,owner_user_id,device_id,expires_at)
+         VALUES ($1,$2,$3,now() + interval '8 hours')`, [code, userId, deviceId],
+      );
+      return responder(response, 201, { code, expires_in_minutes: 480 });
+    }
+
+    if (request.method === 'POST' && request.url === '/scanner/scan') {
+      const userId = await usuarioAutenticado(request);
+      if (!userId) return responder(response, 401, { error: 'Sesión de Supabase inválida.' });
+      const body = await jsonBody(request);
+      if (!esObjeto(body) || typeof body.code !== 'string' || typeof body.barcode !== 'string' || body.barcode.trim().length === 0 || body.barcode.length > 200) {
+        return responder(response, 400, { error: 'Lectura inválida.' });
+      }
+      const session = await pool.query<{ code: string }>(
+        `SELECT code FROM remote_scanner_sessions
+          WHERE code=$1 AND owner_user_id=$2 AND closed_at IS NULL AND expires_at > now()`, [body.code, userId],
+      );
+      if (!session.rows[0]) return responder(response, 404, { error: 'La sesión de escáner ya no está disponible.' });
+      await pool.query(
+        'INSERT INTO remote_scanner_events (session_code,barcode,symbology) VALUES ($1,$2,$3)',
+        [body.code, body.barcode.trim(), typeof body.symbology === 'string' ? body.symbology.slice(0, 60) : null],
+      );
+      return responder(response, 202, { ok: true });
+    }
+
+    if (request.method === 'GET' && request.url?.startsWith('/scanner/pull')) {
+      const userId = await usuarioAutenticado(request);
+      if (!userId) return responder(response, 401, { error: 'Sesión de Supabase inválida.' });
+      const url = new URL(request.url, 'http://localhost');
+      const code = url.searchParams.get('code'); const requestedDevice = url.searchParams.get('device_id');
+      const deviceId = await dispositivoAutenticadoDeUsuario(request, userId);
+      if (!code || !deviceId || deviceId !== requestedDevice) return responder(response, 401, { error: 'Caja no autorizada.' });
+      const session = await pool.query<{ code: string }>(
+        `SELECT code FROM remote_scanner_sessions WHERE code=$1 AND owner_user_id=$2 AND device_id=$3 AND closed_at IS NULL AND expires_at > now()`,
+        [code, userId, deviceId],
+      );
+      if (!session.rows[0]) return responder(response, 404, { error: 'La sesión de escáner ya no está disponible.' });
+      const events = await pool.query<{ id: string; barcode: string }>('SELECT id,barcode FROM remote_scanner_events WHERE session_code=$1 ORDER BY id LIMIT 40', [code]);
+      if (events.rows.length) await pool.query('DELETE FROM remote_scanner_events WHERE id = ANY($1)', [events.rows.map((r) => r.id)]);
+      return responder(response, 200, { barcodes: events.rows.map((r) => r.barcode) });
     }
 
     if (request.method === 'POST' && request.url === '/sync/push') {

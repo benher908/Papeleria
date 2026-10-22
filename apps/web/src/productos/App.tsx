@@ -51,6 +51,7 @@ import { PantallaAjustes } from '../ajustes/PantallaAjustes';
 import { PantallaInventario } from '../inventario/PantallaInventario';
 import { PantallaReportes } from '../reportes/PantallaReportes';
 import { PantallaGestion } from './PantallaGestion';
+import { PantallaEscanerMovil } from '../escaneo/PantallaEscanerMovil';
 import { Formulario, type OpcionCatalogo, type ValoresFormulario } from './Formulario';
 import { pesos } from './formato';
 import { Lista } from './Lista';
@@ -66,9 +67,9 @@ type Vista =
   | { readonly tipo: 'nuevo' }
   | { readonly tipo: 'editar'; readonly fila: FilaProducto }
   | { readonly tipo: 'importar' };
-type Pestana = 'vender' | 'productos' | 'inventario' | 'reportes' | 'etiquetas' | 'gestion' | 'ajustes' | 'respaldo';
+type Pestana = 'vender' | 'escaner' | 'productos' | 'inventario' | 'reportes' | 'etiquetas' | 'gestion' | 'ajustes' | 'respaldo';
 const PESTANA_GUARDADA = 'papeleria:pestana';
-const PESTANAS_VALIDAS: readonly Pestana[] = ['vender', 'productos', 'inventario', 'reportes', 'etiquetas', 'gestion', 'ajustes', 'respaldo'];
+const PESTANAS_VALIDAS: readonly Pestana[] = ['vender', 'escaner', 'productos', 'inventario', 'reportes', 'etiquetas', 'gestion', 'ajustes', 'respaldo'];
 
 function pestanaInicial(): Pestana {
   const guardada = window.localStorage.getItem(PESTANA_GUARDADA);
@@ -292,6 +293,7 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
           {(
             [
               ['vender', 'Vender'],
+              ['escaner', 'Escáner móvil'],
               ['productos', 'Productos'],
               ['inventario', 'Inventario'],
               ['reportes', 'Reportes'],
@@ -322,6 +324,10 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
           carrito a medio armar ni perder el turno que se acaba de abrir. */}
       <div hidden={pestana !== 'vender'} className="pos-workspace px-3 py-3 sm:px-5 sm:py-4">
         <PantallaVenta base={base} sesion={sesion} cola={cola} />
+      </div>
+
+      <div hidden={pestana !== 'escaner'}>
+        <PantallaEscanerMovil />
       </div>
 
       <div hidden={pestana !== 'etiquetas'} className="mx-auto max-w-6xl px-5 py-6">

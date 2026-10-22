@@ -65,6 +65,7 @@ import type { BaseLocal } from '../db/baseLocal';
 import { comoClienteTransaccional } from '../db/cliente';
 import type { ColaEscaneo } from '../escaneo/cola';
 import { CamaraEscaner } from '../escaneo/CamaraEscaner';
+import { ConectorEscanerMovil } from '../escaneo/ConectorEscanerMovil';
 import { intentarCentavos, pesos, pesosParaEditar } from '../productos/formato';
 import { EstilosDeImpresion, CorteZ, Ticket, type DatosNegocio } from './Ticket';
 
@@ -1022,6 +1023,7 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
             onAgregar={agregarFila}
             onVentaLibre={abrirVentaLibre}
             cola={cola}
+            deviceId={sesion.dispositivo.id}
           />
 
           <Carrito
@@ -1658,6 +1660,7 @@ function Buscador({
   onAgregar,
   onVentaLibre,
   cola,
+  deviceId,
 }: {
   readonly busqueda: string;
   readonly onBusqueda: (valor: string) => void;
@@ -1669,6 +1672,7 @@ function Buscador({
   readonly onAgregar: (fila: FilaProducto) => void;
   readonly onVentaLibre: () => void;
   readonly cola: ColaEscaneo;
+  readonly deviceId: string;
 }) {
   return (
     <Tarjeta className="flex min-h-[28rem] flex-col p-4 sm:p-5">
@@ -1700,6 +1704,7 @@ function Buscador({
         </Boton>
       </div>
       <CamaraEscaner cola={cola} />
+      <ConectorEscanerMovil cola={cola} deviceId={deviceId} />
 
       {busqueda.trim() === '' && favoritos.length > 0 ? (
         <div className="mt-3">

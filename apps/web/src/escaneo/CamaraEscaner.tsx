@@ -3,7 +3,7 @@ import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser'
 import type { ColaEscaneo } from './cola';
 import { Boton, Aviso } from '../componentes/ui';
 
-export function CamaraEscaner({ cola }: { readonly cola: ColaEscaneo }) {
+export function CamaraEscaner({ cola, alCodigo }: { readonly cola?: ColaEscaneo; readonly alCodigo?: (codigo: string, symbology?: string) => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const controles = useRef<IScannerControls | null>(null);
   const [abierta, setAbierta] = useState(false);
@@ -22,7 +22,9 @@ export function CamaraEscaner({ cola }: { readonly cola: ColaEscaneo }) {
       controles.current = await lector.decodeFromVideoDevice(preferida.deviceId, video.current, (resultado) => {
         const codigo = resultado?.getText().trim();
         if (!codigo) return;
-        cola.emitir({ codigo, origen: 'celular', leido_at: new Date().toISOString(), symbology: resultado!.getBarcodeFormat().toString() });
+        const symbology = resultado!.getBarcodeFormat().toString();
+        if (alCodigo) alCodigo(codigo, symbology);
+        else cola?.emitir({ codigo, origen: 'celular', leido_at: new Date().toISOString(), symbology });
       });
       setAbierta(true);
     } catch (causa) {

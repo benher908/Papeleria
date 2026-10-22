@@ -958,7 +958,7 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-4">
+    <div className="pos-layout flex flex-col gap-3">
       <EstilosDeImpresion />
 
       <Encabezado
@@ -1009,7 +1009,7 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
           </div>
         </div>
       ) : (
-        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="pos-sale-grid grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(360px,430px)]">
           <Buscador
             busqueda={busqueda}
             onBusqueda={setBusqueda}
@@ -1667,7 +1667,7 @@ function Buscador({
   readonly onVentaLibre: () => void;
 }) {
   return (
-    <Tarjeta className="p-4">
+    <Tarjeta className="flex min-h-[28rem] flex-col p-4 sm:p-5">
       <form onSubmit={onBuscar} className="flex flex-col gap-2">
         <label className="flex flex-col gap-1 text-xs font-medium text-[var(--suave)]">
           Escanear o buscar (F2)
@@ -1720,14 +1720,14 @@ function Buscador({
         <p className="mt-3 text-xs text-[var(--suave)]">Buscando…</p>
       ) : resultados.length === 0 ? (
         busqueda.trim() === '' ? (
-          <div className="mt-4 rounded-md border border-dashed border-[var(--linea)] p-8 text-center text-sm text-[var(--suave)]">
+          <div className="mt-4 flex flex-1 items-center justify-center rounded-md border border-dashed border-[var(--linea)] p-8 text-center text-sm text-[var(--suave)]">
             El carrito está listo. Escanea el primer producto o búscalo por nombre.
           </div>
         ) : (
           <p className="mt-3 text-sm text-[var(--suave)]">Sin coincidencias.</p>
         )
       ) : (
-        <ul className="mt-3 divide-y divide-[var(--linea)]">
+        <ul className="mt-3 max-h-[calc(100dvh-23rem)] flex-1 divide-y divide-[var(--linea)] overflow-y-auto pr-1 xl:max-h-none">
           {resultados.map((fila) => (
             <li key={fila.id}>
               <button
@@ -1781,7 +1781,7 @@ function Carrito({
   readonly onCobrar: () => void;
 }) {
   return (
-    <Tarjeta className="p-4">
+    <Tarjeta className="pos-cart flex min-h-[24rem] flex-col p-4 sm:p-5">
       <div className="flex items-baseline justify-between">
         <h2 className="text-base font-semibold">Carrito</h2>
         <span className="text-xs text-[var(--suave)]">
@@ -1794,7 +1794,7 @@ function Carrito({
           Todavía no hay nada. Escanea o busca un producto.
         </p>
       ) : (
-        <ul className="mt-3 divide-y divide-[var(--linea)]">
+        <ul className="mt-3 max-h-[19rem] flex-1 divide-y divide-[var(--linea)] overflow-y-auto pr-1 xl:max-h-none">
           {lineas.map((linea) => (
             <li key={linea.clave} className="py-2">
               <div className="flex items-start justify-between gap-2">
@@ -1851,7 +1851,7 @@ function Carrito({
         </ul>
       )}
 
-      <div className="mt-3 border-t border-[var(--linea)] pt-3">
+      <div className="mt-3 border-t border-[var(--linea)] bg-[var(--tarjeta)] pt-3">
         {lineas.length === 0 ? null : (
           <>
             <label className="flex flex-col gap-1 text-xs font-medium text-[var(--suave)]">

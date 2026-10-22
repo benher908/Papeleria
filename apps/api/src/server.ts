@@ -4,7 +4,7 @@ import { Pool } from 'pg';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { cargarMigraciones } from '@papeleria/db/node';
-import { adaptarPg, migrar } from '@papeleria/db';
+import { adaptarPg, aplicarEventoRemoto, migrar } from '@papeleria/db';
 
 const port = Number(process.env.PORT ?? 8787);
 const databaseUrl = process.env.DATABASE_URL;
@@ -26,6 +26,7 @@ interface Evento {
   event_id: string;
   device_id: string;
   device_seq: number;
+  type: string;
   payload: Record<string, unknown>;
 }
 
@@ -121,16 +122,23 @@ const server = createServer(async (request, response) => {
       }
       const client = await pool.connect();
       try {
-        await client.query('BEGIN');
-        for (const event of events) {
-          await client.query(
-            `INSERT INTO server_events (event_id, device_id, device_seq, payload)
-             VALUES ($1, $2, $3, $4) ON CONFLICT (event_id) DO NOTHING`,
-            [event.event_id, deviceId, event.device_seq, JSON.stringify(event)],
-          );
-        }
-        await client.query('COMMIT');
-      } catch (error) { await client.query('ROLLBACK'); throw error; }
+        // El registro de transporte y la proyección central tienen que entrar juntos.
+        // Si una venta queda en server_events pero no llega a sales, un equipo nuevo
+        // vería otra realidad que Supabase. Sólo se proyecta el INSERT que realmente
+        // ganó la idempotencia; un reintento no duplica ni stock ni ventas.
+        await adaptarPg(client).transaction(async (tx) => {
+          for (const event of events) {
+            const insertado = await tx.query<{ event_id: string }>(
+              `INSERT INTO server_events (event_id, device_id, device_seq, payload)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (event_id) DO NOTHING
+               RETURNING event_id`,
+              [event.event_id, deviceId, event.device_seq, JSON.stringify(event)],
+            );
+            if (insertado.rows.length > 0) await aplicarEventoRemoto(tx, event);
+          }
+        });
+      }
       finally { client.release(); }
       return responder(response, 202, { accepted: events.map((event) => event.event_id) });
     }

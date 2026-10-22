@@ -300,7 +300,7 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
 
       {/* El POS también se queda montado: cambiar de pestaña no puede vaciar un
           carrito a medio armar ni perder el turno que se acaba de abrir. */}
-      <div hidden={pestana !== 'vender'} className="mx-auto max-w-6xl px-5 py-6">
+      <div hidden={pestana !== 'vender'} className="pos-workspace px-3 py-3 sm:px-5 sm:py-4">
         <PantallaVenta base={base} sesion={sesion} cola={cola} />
       </div>
 

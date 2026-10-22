@@ -61,6 +61,29 @@ body {
   line-height: 1.5;
 }
 
+/* Punto de venta: en una caja la pantalla de venta es el espacio de trabajo.
+   El catálogo ocupa el área disponible y el carrito queda visible en pantallas
+   amplias; en móvil se apila y conserva zonas cómodas para tocar. */
+.pos-workspace {
+  width: 100%;
+}
+
+.pos-layout {
+  min-height: calc(100dvh - 9.5rem);
+}
+
+@media (min-width: 1280px) {
+  .pos-sale-grid {
+    min-height: calc(100dvh - 13.5rem);
+  }
+
+  .pos-cart {
+    position: sticky;
+    top: 0.75rem;
+    max-height: calc(100dvh - 14.25rem);
+  }
+}
+
 .panel {
   max-width: 60rem;
   margin: 0 auto;

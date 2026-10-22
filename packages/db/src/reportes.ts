@@ -1,16 +1,29 @@
 import type { ClienteSql } from './runner';
 
-export interface ResumenVentas { readonly tickets: number; readonly ventasMinor: bigint; readonly descuentosMinor: bigint; readonly utilidadMinor: bigint; }
+export interface ResumenVentas {
+  readonly tickets: number;
+  readonly ventasMinor: bigint;
+  readonly descuentosMinor: bigint;
+  /** Lo que costaron las unidades que salieron hoy. */
+  readonly costoVendidoMinor: bigint;
+  /** Venta neta menos el costo de lo vendido. */
+  readonly utilidadMinor: bigint;
+}
 export interface VentaHistorial { readonly id: string; readonly folio: string; readonly totalMinor: bigint; readonly estado: string; readonly ocurridoAt: string; }
 
 export async function resumenVentas(cliente: ClienteSql, desde: string, hasta: string): Promise<ResumenVentas> {
-  const { rows } = await cliente.query<{ tickets: unknown; ventas: unknown; descuentos: unknown; utilidad: unknown }>(
+  const { rows } = await cliente.query<{ tickets: unknown; ventas: unknown; descuentos: unknown; costo: unknown; utilidad: unknown }>(
     `SELECT (SELECT count(*) FROM sales s WHERE s.estado='completada' AND s.ocurrido_at >= $1::timestamptz AND s.ocurrido_at < $2::timestamptz) tickets,
             (SELECT COALESCE(sum(total_minor),0) FROM sales s WHERE s.estado='completada' AND s.ocurrido_at >= $1::timestamptz AND s.ocurrido_at < $2::timestamptz) ventas,
             (SELECT COALESCE(sum(descuento_minor),0) FROM sales s WHERE s.estado='completada' AND s.ocurrido_at >= $1::timestamptz AND s.ocurrido_at < $2::timestamptz) descuentos,
+            (SELECT COALESCE(sum((l.costo_unitario_minor * l.qty_base)::bigint),0)::bigint FROM sale_lines l JOIN sales s ON s.id=l.sale_id WHERE s.estado='completada' AND s.ocurrido_at >= $1::timestamptz AND s.ocurrido_at < $2::timestamptz) costo,
             (SELECT COALESCE(sum(l.total_linea_minor - (l.costo_unitario_minor * l.qty_base)::bigint),0)::bigint FROM sale_lines l JOIN sales s ON s.id=l.sale_id WHERE s.estado='completada' AND s.ocurrido_at >= $1::timestamptz AND s.ocurrido_at < $2::timestamptz) utilidad`, [desde, hasta]);
-  const r = rows[0] ?? { tickets: 0, ventas: 0, descuentos: 0, utilidad: 0 };
-  return { tickets: Number(r.tickets), ventasMinor: BigInt(String(r.ventas)), descuentosMinor: BigInt(String(r.descuentos)), utilidadMinor: BigInt(String(r.utilidad)) };
+  const r = rows[0] ?? { tickets: 0, ventas: 0, descuentos: 0, costo: 0, utilidad: 0 };
+  return {
+    tickets: Number(r.tickets), ventasMinor: BigInt(String(r.ventas)),
+    descuentosMinor: BigInt(String(r.descuentos)), costoVendidoMinor: BigInt(String(r.costo)),
+    utilidadMinor: BigInt(String(r.utilidad)),
+  };
 }
 
 export async function historialVentas(cliente: ClienteSql, desde: string, hasta: string): Promise<VentaHistorial[]> {

@@ -12,21 +12,13 @@
  * ve sucio. La hoja de impresión oculta el resto de la aplicación y deja sólo este
  * bloque, con ancho físico de 58 mm para que el navegador no lo escale.
  *
- * El IVA se muestra desglosado porque el precio de lista ya lo incluye: el cliente
- * ve el total que paga y, debajo, cuánto de eso es impuesto. Es la misma aritmética
- * de `@papeleria/core`, que garantiza `base + iva === total`.
+ * El ticket es deliberadamente breve: artículos, cantidades, precio y total. El IVA
+ * se calcula y conserva en la venta para reportes, pero no se imprime por separado.
  */
 
 import type { CierreDeTurno, ResumenTurno, VentaRegistrada } from '@papeleria/db';
 
 import { pesos } from '../productos/formato';
-
-export interface DatosNegocio {
-  readonly nombre: string;
-  readonly rfc: string;
-  readonly direccion: string;
-  readonly telefono: string;
-}
 
 const METODOS: Record<string, string> = {
   efectivo: 'Efectivo',
@@ -36,6 +28,13 @@ const METODOS: Record<string, string> = {
   vale: 'Vale',
   credito: 'Crédito',
 };
+
+export interface DatosNegocio {
+  readonly nombre: string;
+  readonly rfc: string;
+  readonly direccion: string;
+  readonly telefono: string;
+}
 
 export function Ticket({
   venta,
@@ -47,8 +46,6 @@ export function Ticket({
   readonly id?: string;
 }) {
   const fecha = new Date(venta.ocurridoAt);
-  const cambio = venta.pagos.reduce((suma, pago) => suma + pago.cambioMinor, 0n);
-  const recibido = venta.pagos.reduce((suma, pago) => suma + pago.montoMinor, 0n);
 
   return (
     <div
@@ -85,49 +82,12 @@ export function Ticket({
 
       <div className="my-[2mm] border-t border-dashed border-black" />
 
-      <div className="flex justify-between">
-        <span>Subtotal</span>
-        <span>{pesos(venta.subtotalMinor)}</span>
-      </div>
-      <div className="flex justify-between">
-        <span>IVA incluido</span>
-        <span>{pesos(venta.impuestoMinor)}</span>
-      </div>
-      {venta.descuentoMinor > 0n ? (
-        <div className="flex justify-between">
-          <span>Descuento</span>
-          <span>−{pesos(venta.descuentoMinor)}</span>
-        </div>
-      ) : null}
       <div className="mt-[1mm] flex justify-between border-t border-black pt-[1mm] text-[12px] font-bold">
         <span>TOTAL</span>
         <span>{pesos(venta.totalMinor)}</span>
       </div>
 
       <div className="my-[2mm] border-t border-dashed border-black" />
-
-      {venta.pagos.map((pago, indice) => (
-        <div key={`${pago.metodo}-${indice}`} className="flex justify-between">
-          <span>{METODOS[pago.metodo] ?? pago.metodo}</span>
-          <span>{pesos(pago.montoMinor)}</span>
-        </div>
-      ))}
-      {cambio > 0n ? (
-        <>
-          <div className="flex justify-between">
-            <span>Recibido</span>
-            <span>{pesos(recibido)}</span>
-          </div>
-          <div className="flex justify-between font-bold">
-            <span>Cambio</span>
-            <span>{pesos(cambio)}</span>
-          </div>
-        </>
-      ) : null}
-
-      <div className="my-[2mm] border-t border-dashed border-black" />
-
-      <p className="text-center">Precios con IVA incluido</p>
       <p className="mt-[2mm] text-center">¡Gracias por su compra!</p>
     </div>
   );

@@ -23,6 +23,7 @@ export interface PropsLista {
   readonly onImportar: () => void;
   readonly onEditar: (fila: FilaProducto) => void;
   readonly onDesactivar: (fila: FilaProducto) => void;
+  readonly onActivar: (fila: FilaProducto) => void;
   readonly onRecargar: () => void;
   readonly error: string | null;
 }
@@ -40,6 +41,7 @@ export function Lista({
   onImportar,
   onEditar,
   onDesactivar,
+  onActivar,
   onRecargar,
   error,
 }: PropsLista) {
@@ -162,7 +164,11 @@ export function Lista({
                       <Boton variante="secundario" className="px-2 py-1 text-xs" onClick={(e) => { e.stopPropagation(); onDesactivar(fila); }}>
                         Desactivar
                       </Boton>
-                    ) : null}
+                    ) : (
+                      <Boton variante="secundario" className="px-2 py-1 text-xs" onClick={(e) => { e.stopPropagation(); onActivar(fila); }}>
+                        Activar
+                      </Boton>
+                    )}
                   </td>
                 </tr>
               ))}

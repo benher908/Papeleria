@@ -251,6 +251,17 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
     } catch (causa) { setErrorLista(mensajeDe(causa)); }
   }
 
+  async function activar(fila: FilaProducto): Promise<void> {
+    try {
+      await actualizarProducto(comoClienteTransaccional(base), fila.id, { isActivo: true }, {
+        usuarioId: sesion.usuario.id, dispositivoId: sesion.dispositivo.id,
+      });
+      await base.sincronizar();
+      setVersion((n) => n + 1);
+      setExito({ texto: `«${fila.nombre}» volvió a estar activo.`, codigo: null });
+    } catch (causa) { setErrorLista(mensajeDe(causa)); }
+  }
+
   const titulo =
     vista.tipo === 'nuevo'
       ? 'Nuevo producto'
@@ -360,6 +371,7 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
             }}
             onEditar={abrirEditar}
             onDesactivar={(fila) => void desactivar(fila)}
+            onActivar={(fila) => void activar(fila)}
             onRecargar={() => setVersion((n) => n + 1)}
             error={errorLista}
           />

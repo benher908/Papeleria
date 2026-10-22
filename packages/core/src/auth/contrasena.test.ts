@@ -10,10 +10,10 @@ describe('revisarContrasena', () => {
   });
 
   test('rechaza la corta y dice cuánto le falta', () => {
-    const problemas = revisarContrasena('Papeleria1!');
+    const problemas = revisarContrasena('Papeler1!');
     expect(problemas).toHaveLength(1);
     expect(problemas[0]).toContain('10 caracteres');
-    expect(problemas[0]).toContain('tiene 11');
+    expect(problemas[0]).toContain('tiene 9');
   });
 
   test('exactamente 10 caracteres ya pasa', () => {

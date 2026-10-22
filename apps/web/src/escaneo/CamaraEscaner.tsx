@@ -14,7 +14,10 @@ export function CamaraEscaner({ cola, alCodigo }: { readonly cola?: ColaEscaneo;
   async function alternar(): Promise<void> {
     if (abierta) { controles.current?.stop(); controles.current = null; setAbierta(false); return; }
     setError(null);
+    setAbierta(true);
     try {
+      // Da a React un ciclo de render para montar el <video> antes de usarlo.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       const lector = new BrowserMultiFormatReader();
       if (!video.current) throw new Error('No se pudo preparar la vista de cámara.');
       // En Android algunos navegadores no enumeran cámaras hasta que se solicita
@@ -28,6 +31,7 @@ export function CamaraEscaner({ cola, alCodigo }: { readonly cola?: ColaEscaneo;
       });
       setAbierta(true);
     } catch (causa) {
+      setAbierta(false);
       setError(causa instanceof Error ? causa.message : 'No se pudo abrir la cámara.');
     }
   }

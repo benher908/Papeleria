@@ -32,7 +32,7 @@ import { comoClienteTransaccional, enTransaccionDuradera } from './db/cliente';
 import { crearColaEscaneo } from './escaneo/cola';
 import { instalarLectorHid } from './escaneo/hid';
 import { montarProductos } from './productos/montar';
-import { iniciarSincronizacion } from './sync/cliente';
+import { iniciarSincronizacion, sincronizarAhora } from './sync/cliente';
 import { aviso, capasQueFaltan, crear, mensaje } from './ui';
 
 export async function montarApp(raiz: HTMLElement): Promise<void> {
@@ -99,10 +99,26 @@ export async function montarApp(raiz: HTMLElement): Promise<void> {
     const barra = crear('div', 'barra');
     const estadoSync = crear('span', 'donde', 'Preparando sincronización…');
     estadoSync.setAttribute('aria-live', 'polite');
+    const botonSync = crear('button', 'boton secundario', 'Sincronizar ahora');
+    botonSync.type = 'button';
+    botonSync.title = 'Subir cambios pendientes y descargar los cambios de otros dispositivos';
+    botonSync.addEventListener('click', () => {
+      void (async () => {
+        botonSync.disabled = true;
+        estadoSync.textContent = 'Sincronizando…';
+        try {
+          await sincronizarAhora(base, actual.dispositivo.id);
+          estadoSync.textContent = 'Sincronizado';
+        } catch (causa) {
+          estadoSync.textContent = mensaje(causa);
+        } finally { botonSync.disabled = false; }
+      })();
+    });
     barra.append(
       crear('strong', 'quien', actual.usuario.nombre),
       crear('span', 'donde', `caja ${actual.dispositivo.codigo}`),
       estadoSync,
+      botonSync,
       crear('span', 'crecer'),
       botonSalir(() => mostrarEntrada()),
     );

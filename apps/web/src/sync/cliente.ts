@@ -21,6 +21,16 @@ export function estaEmparejado(deviceId: string): boolean {
   return localStorage.getItem(DEVICE_KEY) === deviceId && localStorage.getItem(TOKEN_KEY) !== null;
 }
 
+/** Fuerza un ciclo completo de subida y descarga desde la interfaz. */
+export async function sincronizarAhora(base: BaseLocal, deviceId: string): Promise<void> {
+  if (!navigator.onLine) throw new Error('No hay conexión a internet.');
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token || localStorage.getItem(DEVICE_KEY) !== deviceId) {
+    throw new Error('Este dispositivo todavía no está vinculado.');
+  }
+  await sincronizarUnaVez(base, deviceId, token);
+}
+
 export function iniciarSincronizacion(
   base: BaseLocal,
   deviceId: string,

@@ -650,7 +650,7 @@ function hoja(etiquetas: readonly string[], config: Config): string {
     letter-spacing: -0.2pt;
   }
   .producto .codigo { height: 11.5mm; display: flex; align-items: center; justify-content: center; }
-  .producto .codigo svg, .anaquel .codigo svg { width: 100%; height: 100%; }
+  .producto .codigo svg, .anaquel .codigo svg { width: auto; max-width: 100%; height: auto; max-height: 100%; }
   .pie {
     display: flex;
     justify-content: space-between;
@@ -682,8 +682,8 @@ function barcodeSVG(texto: string, bcid: 'ean13' | 'code128'): string {
     return toSVG({
       bcid,
       text: texto,
-      scale: 2,
-      height: 10,
+      scale: 3,
+      height: 12,
       includetext: true,
       textxalign: 'center',
       textsize: 7,

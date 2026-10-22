@@ -22,6 +22,7 @@ export interface PropsLista {
   readonly onNuevo: () => void;
   readonly onImportar: () => void;
   readonly onEditar: (fila: FilaProducto) => void;
+  readonly onDesactivar: (fila: FilaProducto) => void;
   readonly onRecargar: () => void;
   readonly error: string | null;
 }
@@ -38,6 +39,7 @@ export function Lista({
   onNuevo,
   onImportar,
   onEditar,
+  onDesactivar,
   onRecargar,
   error,
 }: PropsLista) {
@@ -115,6 +117,7 @@ export function Lista({
                 <th className="px-3 py-2 text-right font-medium">Precio</th>
                 <th className="px-3 py-2 text-right font-medium">Stock</th>
                 <th className="hidden px-3 py-2 font-medium md:table-cell">Código</th>
+                <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
@@ -153,6 +156,13 @@ export function Lista({
                   </td>
                   <td className="hidden px-3 py-2 font-mono text-xs text-[var(--suave)] md:table-cell">
                     {fila.codigo ?? '—'}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {fila.isActivo ? (
+                      <Boton variante="secundario" className="px-2 py-1 text-xs" onClick={(e) => { e.stopPropagation(); onDesactivar(fila); }}>
+                        Desactivar
+                      </Boton>
+                    ) : null}
                   </td>
                 </tr>
               ))}

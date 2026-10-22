@@ -23,7 +23,7 @@
  * cuenta y duplicaría suscripciones. Se esconde con `hidden`.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   actualizarProducto,
@@ -42,7 +42,6 @@ import type { SesionIniciada } from '../auth/pantalla';
 import { Aviso, Boton, cx } from '../componentes/ui';
 import type { BaseLocal } from '../db/baseLocal';
 import { comoClienteTransaccional } from '../db/cliente';
-import { montarPanel } from '../diagnostico/panel';
 import type { ColaEscaneo } from '../escaneo/cola';
 import { PantallaEtiquetas } from '../etiquetas/PantallaEtiquetas';
 import { PantallaImportacion } from '../importacion/PantallaImportacion';
@@ -67,7 +66,7 @@ type Vista =
   | { readonly tipo: 'nuevo' }
   | { readonly tipo: 'editar'; readonly fila: FilaProducto }
   | { readonly tipo: 'importar' };
-type Pestana = 'vender' | 'productos' | 'inventario' | 'reportes' | 'etiquetas' | 'gestion' | 'ajustes' | 'respaldo' | 'diagnostico';
+type Pestana = 'vender' | 'productos' | 'inventario' | 'reportes' | 'etiquetas' | 'gestion' | 'ajustes' | 'respaldo';
 
 interface Exito {
   readonly texto: string;
@@ -103,8 +102,6 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
   const [guardando, setGuardando] = useState(false);
   const [errorForm, setErrorForm] = useState<string | null>(null);
   const [exito, setExito] = useState<Exito | null>(null);
-
-  const panelRef = useRef<HTMLDivElement>(null);
 
   // ── catálogo de apoyo (categorías y unidades) ──────────────────────────────
   useEffect(() => {
@@ -155,13 +152,6 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
       window.clearTimeout(temporizador);
     };
   }, [base, filtro, version]);
-
-  // ── el panel de diagnóstico, montado una sola vez ──────────────────────────
-  useEffect(() => {
-    const nodo = panelRef.current;
-    if (nodo === null) return;
-    void montarPanel(nodo, cola);
-  }, [cola]);
 
   // Al volver a Productos se relee la lista: una venta en el POS cambió el stock y la
   // lista se quedó montada mientras tanto. No hay caché que invalidar; se vuelve a
@@ -249,6 +239,18 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
     setVista({ tipo: 'lista' });
   }
 
+  async function desactivar(fila: FilaProducto): Promise<void> {
+    if (!window.confirm(`¿Desactivar «${fila.nombre}»? Se conservará su historial.`)) return;
+    try {
+      await actualizarProducto(comoClienteTransaccional(base), fila.id, { isActivo: false }, {
+        usuarioId: sesion.usuario.id, dispositivoId: sesion.dispositivo.id,
+      });
+      await base.sincronizar();
+      setVersion((n) => n + 1);
+      setExito({ texto: `«${fila.nombre}» quedó desactivado.`, codigo: null });
+    } catch (causa) { setErrorLista(mensajeDe(causa)); }
+  }
+
   const titulo =
     vista.tipo === 'nuevo'
       ? 'Nuevo producto'
@@ -273,7 +275,6 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
               ['gestion', 'Gestión'],
               ['ajustes', 'Ajustes'],
               ['respaldo', 'Respaldo'],
-              ['diagnostico', 'Diagnóstico'],
             ] as const
           ).map(([clave, texto]) => (
             <button
@@ -291,11 +292,6 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
             </button>
           ))}
         </nav>
-      </div>
-
-      {/* El panel se queda montado: sólo se esconde. */}
-      <div hidden={pestana !== 'diagnostico'}>
-        <div ref={panelRef} />
       </div>
 
       {/* El POS también se queda montado: cambiar de pestaña no puede vaciar un
@@ -363,6 +359,7 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
               setVista({ tipo: 'importar' });
             }}
             onEditar={abrirEditar}
+            onDesactivar={(fila) => void desactivar(fila)}
             onRecargar={() => setVersion((n) => n + 1)}
             error={errorLista}
           />

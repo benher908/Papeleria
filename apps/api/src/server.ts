@@ -13,6 +13,7 @@ if (!databaseUrl) throw new Error('Falta DATABASE_URL.');
 const pairingCode = process.env.SYNC_PAIRING_CODE;
 const supabaseUrl = process.env.SUPABASE_URL;
 if (!supabaseUrl) throw new Error('Falta SUPABASE_URL.');
+const allowedOrigin = process.env.ALLOWED_ORIGIN ?? 'https://papeleria-plw6.onrender.com';
 const supabaseKeys = createRemoteJWKSet(new URL(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/.well-known/jwks.json`));
 if (pairingCode && pairingCode.length < 32) {
   throw new Error('SYNC_PAIRING_CODE debe tener al menos 32 caracteres aleatorios.');
@@ -53,15 +54,29 @@ async function jsonBody(request: IncomingMessage): Promise<unknown> {
   return texto === '' ? null : JSON.parse(texto);
 }
 
-function responder(response: ServerResponse, status: number, body: unknown): void {
+function responder(response: ServerResponse, status: number, body: unknown, origin = allowedOrigin): void {
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
-    'access-control-allow-origin': '*',
+    'access-control-allow-origin': origin,
+    'access-control-allow-credentials': 'true',
     'access-control-allow-headers': 'content-type, authorization, x-supabase-token',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
     'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': 'DENY',
+    'referrer-policy': 'no-referrer',
   });
   response.end(status === 204 ? undefined : JSON.stringify(body));
+}
+
+const intentos = new Map<string, { cuenta: number; hasta: number }>();
+function limitado(request: IncomingMessage): boolean {
+  const ip = request.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() ?? request.socket.remoteAddress ?? 'unknown';
+  const ahora = Date.now();
+  const previo = intentos.get(ip);
+  if (!previo || ahora >= previo.hasta) { intentos.set(ip, { cuenta: 1, hasta: ahora + 60_000 }); return false; }
+  previo.cuenta += 1;
+  return previo.cuenta > 60;
 }
 
 function esObjeto(valor: unknown): valor is Record<string, unknown> {
@@ -90,6 +105,7 @@ async function usuarioAutenticado(request: IncomingMessage): Promise<string | nu
   const token = (typeof header === 'string' ? header : undefined) ?? request.headers.authorization?.match(/^Bearer\s+(.+)$/)?.[1];
   if (!token) return null;
   try {
+    if (limitado(request)) return responder(response, 429, { error: 'Demasiadas solicitudes; espera un minuto.' });
     const { payload } = await jwtVerify(token, supabaseKeys, { issuer: `${supabaseUrl!.replace(/\/$/, '')}/auth/v1`, audience: 'authenticated' });
     return typeof payload.sub === 'string' ? payload.sub : null;
   } catch { return null; }

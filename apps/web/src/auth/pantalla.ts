@@ -21,6 +21,7 @@ import {
   ErrorUsuarioYaExiste,
   crearUsuario,
   entrar,
+  hashearContrasena,
   registrarDispositivo,
   siguienteCodigoLibre,
   type ContextoSesion,
@@ -31,6 +32,7 @@ import {
 import { enTransaccionDuradera } from '../db/cliente';
 import type { BaseLocal } from '../db/baseLocal';
 import { emparejarDispositivo } from '../sync/cliente';
+import { estaSupabaseConfigurado, iniciarSesionSupabase, leerPerfilSupabase, solicitarRecuperacion } from './supabase';
 import { aviso, crear, esperar, mensaje } from '../ui';
 import {
   guardarDispositivo,
@@ -89,7 +91,7 @@ export function montarEntrada(
   const campoNombre = opciones.hayCuenta
     ? undefined
     : campo('Nombre', 'nombre', 'text', 'name');
-  const campoUsuario = campo('Usuario', 'usuario', 'text', 'username');
+  const campoUsuario = campo(estaSupabaseConfigurado ? 'Correo electrónico' : 'Usuario', 'usuario', estaSupabaseConfigurado ? 'email' : 'text', estaSupabaseConfigurado ? 'email' : 'username');
   const campoContrasena = campo(
     'Contraseña',
     'contrasena',
@@ -118,6 +120,16 @@ export function montarEntrada(
   );
   boton.type = 'submit';
   formulario.append(boton);
+
+  if (opciones.hayCuenta && estaSupabaseConfigurado) {
+    const recuperar = crear('button', 'enlace', 'Olvidé mi contraseña');
+    recuperar.type = 'button';
+    recuperar.addEventListener('click', () => void solicitarRecuperacion(campoUsuario.entrada.value.trim()).then(
+      () => errores.replaceChildren(aviso('Revisa tu correo', ['Te enviamos un enlace para cambiar la contraseña.'])),
+      (causa) => errores.replaceChildren(aviso('No se pudo enviar el enlace', [mensaje(causa)])),
+    ));
+    formulario.append(recuperar);
+  }
 
   const errores = crear('div');
   caja.append(formulario, errores);
@@ -256,6 +268,20 @@ export function montarEntrada(
       await esperar(retrasoTrasFallos(fallos));
     }
 
+    let nombreCentral: string | undefined;
+    if (estaSupabaseConfigurado) {
+      const central = await iniciarSesionSupabase(usuario, contrasena);
+      nombreCentral = (await leerPerfilSupabase(central.id)) ?? central.user_metadata?.nombre;
+      await enTransaccionDuradera(base, async (tx) => {
+        const existente = await tx.query<{ id: string }>('SELECT id FROM users WHERE username = $1', [usuario]);
+        if (existente.rows.length === 0) {
+          await crearUsuario(tx, { username: usuario, nombre: nombreCentral ?? usuario, contrasena, prohibidas: [...PROHIBIDAS, usuario] });
+        } else {
+          await tx.query('UPDATE users SET password_hash = $1, nombre = $2, is_activo = TRUE WHERE username = $3', [await hashearContrasena(contrasena), nombreCentral ?? usuario, usuario]);
+        }
+      });
+    }
+
     const dispositivo = await asegurarDispositivo(base);
     const resultado = await enTransaccionDuradera(base, (tx) =>
       entrar(tx, {
@@ -330,8 +356,8 @@ interface Campo {
 function campo(
   texto: string,
   nombre: string,
-  tipo: 'text' | 'password',
-  autocompletar: 'name' | 'username' | 'current-password' | 'new-password',
+  tipo: 'text' | 'email' | 'password',
+  autocompletar: 'name' | 'email' | 'username' | 'current-password' | 'new-password',
 ): Campo {
   const etiqueta = crear('label', 'campo');
   etiqueta.append(crear('span', undefined, texto));

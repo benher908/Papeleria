@@ -20,6 +20,7 @@ import { cerrarSesion, hayUsuarios, verificarSesion } from '@papeleria/db';
 import type { Root } from 'react-dom/client';
 
 import { montarEntrada, type SesionIniciada } from './auth/pantalla';
+import { cerrarSesionSupabase, estaSupabaseConfigurado } from './auth/supabase';
 import {
   guardarDispositivo,
   leerToken,
@@ -62,7 +63,7 @@ export async function montarApp(raiz: HTMLElement): Promise<void> {
 
   // Se pregunta una sola vez: en esta pantalla no hay forma de que la cuenta aparezca o
   // desaparezca sin pasar por aquí.
-  let hayCuenta = await hayUsuarios(comoClienteTransaccional(base));
+  let hayCuenta = estaSupabaseConfigurado || await hayUsuarios(comoClienteTransaccional(base));
   let sesion: SesionIniciada | null = null;
 
   /**
@@ -191,6 +192,7 @@ export async function montarApp(raiz: HTMLElement): Promise<void> {
           await enTransaccionDuradera(base, (tx) => cerrarSesion(tx, cual)).catch(() => null);
         }
         olvidarToken();
+        await cerrarSesionSupabase();
         alSalir();
       })();
     });

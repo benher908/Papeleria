@@ -8,8 +8,9 @@ const TOKEN_KEY = 'papeleria.sync.token';
 const DEVICE_KEY = 'papeleria.sync.device';
 
 export async function emparejarDispositivo(deviceId: string, codigo: string): Promise<void> {
+  const jwt = await tokenSupabase();
   const response = await fetch(`${API_SYNC}/sync/pair`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-supabase-token': jwt ?? '' },
     body: JSON.stringify({ device_id: deviceId, pairing_code: codigo.trim() }),
   });
   const body = await response.json() as { token?: string; error?: string };

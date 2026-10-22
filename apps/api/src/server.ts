@@ -75,12 +75,12 @@ function codigoValido(recibido: unknown): boolean {
   return timingSafeEqual(esperado, actual);
 }
 
-async function dispositivoAutenticado(request: IncomingMessage): Promise<string | null> {
+async function dispositivoAutenticadoDeUsuario(request: IncomingMessage, userId: string): Promise<string | null> {
   const token = request.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{40,})$/)?.[1];
   if (!token) return null;
   const resultado = await pool.query<{ device_id: string }>(
-    'SELECT device_id FROM device_sync_tokens WHERE token_hash = $1 AND revoked_at IS NULL',
-    [sha256(token)],
+    'SELECT device_id FROM device_sync_tokens WHERE token_hash = $1 AND owner_user_id = $2 AND revoked_at IS NULL',
+    [sha256(token), userId],
   );
   return resultado.rows[0]?.device_id ?? null;
 }
@@ -103,6 +103,8 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'POST' && request.url === '/sync/pair') {
+      const userId = await usuarioAutenticado(request);
+      if (!userId) return responder(response, 401, { error: 'Sesión de Supabase inválida.' });
       const body = await jsonBody(request);
       if (!esObjeto(body) || typeof body.device_id !== 'string' ||
           !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.device_id) ||
@@ -111,11 +113,11 @@ const server = createServer(async (request, response) => {
       }
       const token = randomBytes(32).toString('base64url');
       await pool.query(
-        `INSERT INTO device_sync_tokens (device_id, token_hash)
-         VALUES ($1, $2)
+        `INSERT INTO device_sync_tokens (device_id, token_hash, owner_user_id)
+         VALUES ($1, $2, $3)
          ON CONFLICT (device_id) DO UPDATE SET token_hash = EXCLUDED.token_hash,
-           created_at = now(), revoked_at = NULL`,
-        [body.device_id, sha256(token)],
+           owner_user_id = EXCLUDED.owner_user_id, created_at = now(), revoked_at = NULL`,
+        [body.device_id, sha256(token), userId],
       );
       return responder(response, 200, { token, device_id: body.device_id });
     }
@@ -123,7 +125,7 @@ const server = createServer(async (request, response) => {
     if (request.method === 'POST' && request.url === '/sync/push') {
       const userId = await usuarioAutenticado(request);
       if (!userId) return responder(response, 401, { error: 'Sesión de Supabase inválida.' });
-      const deviceId = await dispositivoAutenticado(request);
+      const deviceId = await dispositivoAutenticadoDeUsuario(request, userId);
       if (!deviceId) return responder(response, 401, { error: 'Dispositivo no emparejado.' });
       const body = await jsonBody(request);
       if (!esObjeto(body) || !Array.isArray(body.events) || body.events.length > 200) {
@@ -162,7 +164,7 @@ const server = createServer(async (request, response) => {
     if (request.method === 'GET' && request.url?.startsWith('/sync/pull')) {
       const userId = await usuarioAutenticado(request);
       if (!userId) return responder(response, 401, { error: 'Sesión de Supabase inválida.' });
-      const deviceId = await dispositivoAutenticado(request);
+      const deviceId = await dispositivoAutenticadoDeUsuario(request, userId);
       if (!deviceId) return responder(response, 401, { error: 'Dispositivo no emparejado.' });
       const url = new URL(request.url, 'http://localhost');
       const since = Number(url.searchParams.get('since') ?? '0');

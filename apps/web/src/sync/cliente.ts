@@ -1,5 +1,6 @@
 import { aplicarEventoRemoto, type EventoRemoto } from '@papeleria/db';
 import type { BaseLocal } from '../db/baseLocal';
+import { tokenSupabase } from '../auth/supabase';
 
 export const API_SYNC = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '')
   || 'https://papeleria-plw6.onrender.com';
@@ -77,9 +78,10 @@ async function sincronizarUnaVez(base: BaseLocal, deviceId: string, token: strin
     "SELECT event_id,payload FROM outbox ORDER BY (payload->>'device_seq')::bigint LIMIT 200",
   );
   if (pendientes.length) {
+    const jwt = await tokenSupabase();
     const response = await fetch(`${API_SYNC}/sync/push`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${token}`, 'x-supabase-token': jwt ?? '', 'content-type': 'application/json' },
       body: JSON.stringify({ events: pendientes.map((fila) => fila.payload) }),
     });
     const body = await response.json() as { accepted?: string[]; error?: string };
@@ -95,7 +97,7 @@ async function sincronizarUnaVez(base: BaseLocal, deviceId: string, token: strin
   let cursor = Number(fila?.last_pull_seq ?? 0);
   for (let pagina = 0; pagina < 10; pagina++) {
     const response = await fetch(`${API_SYNC}/sync/pull?since=${cursor}&limit=200`, {
-      headers: { authorization: `Bearer ${token}` },
+      headers: { authorization: `Bearer ${token}`, 'x-supabase-token': (await tokenSupabase()) ?? '' },
     });
     const body = await response.json() as {
       events?: Array<{ server_seq: number; device_id: string; payload: EventoRemoto }>;

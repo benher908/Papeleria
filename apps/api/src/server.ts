@@ -5,11 +5,15 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { cargarMigraciones } from '@papeleria/db/node';
 import { adaptarPg, aplicarEventoRemoto, migrar } from '@papeleria/db';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 const port = Number(process.env.PORT ?? 8787);
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('Falta DATABASE_URL.');
 const pairingCode = process.env.SYNC_PAIRING_CODE;
+const supabaseUrl = process.env.SUPABASE_URL;
+if (!supabaseUrl) throw new Error('Falta SUPABASE_URL.');
+const supabaseKeys = createRemoteJWKSet(new URL(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/.well-known/jwks.json`));
 if (pairingCode && pairingCode.length < 32) {
   throw new Error('SYNC_PAIRING_CODE debe tener al menos 32 caracteres aleatorios.');
 }
@@ -53,7 +57,7 @@ function responder(response: ServerResponse, status: number, body: unknown): voi
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'access-control-allow-origin': '*',
-    'access-control-allow-headers': 'content-type, authorization',
+    'access-control-allow-headers': 'content-type, authorization, x-supabase-token',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
     'cache-control': 'no-store',
   });
@@ -79,6 +83,16 @@ async function dispositivoAutenticado(request: IncomingMessage): Promise<string 
     [sha256(token)],
   );
   return resultado.rows[0]?.device_id ?? null;
+}
+
+async function usuarioAutenticado(request: IncomingMessage): Promise<string | null> {
+  const header = request.headers['x-supabase-token'];
+  const token = (typeof header === 'string' ? header : undefined) ?? request.headers.authorization?.match(/^Bearer\s+(.+)$/)?.[1];
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, supabaseKeys, { issuer: `${supabaseUrl!.replace(/\/$/, '')}/auth/v1`, audience: 'authenticated' });
+    return typeof payload.sub === 'string' ? payload.sub : null;
+  } catch { return null; }
 }
 
 const server = createServer(async (request, response) => {
@@ -107,6 +121,8 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'POST' && request.url === '/sync/push') {
+      const userId = await usuarioAutenticado(request);
+      if (!userId) return responder(response, 401, { error: 'Sesión de Supabase inválida.' });
       const deviceId = await dispositivoAutenticado(request);
       if (!deviceId) return responder(response, 401, { error: 'Dispositivo no emparejado.' });
       const body = await jsonBody(request);
@@ -144,6 +160,8 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'GET' && request.url?.startsWith('/sync/pull')) {
+      const userId = await usuarioAutenticado(request);
+      if (!userId) return responder(response, 401, { error: 'Sesión de Supabase inválida.' });
       const deviceId = await dispositivoAutenticado(request);
       if (!deviceId) return responder(response, 401, { error: 'Dispositivo no emparejado.' });
       const url = new URL(request.url, 'http://localhost');

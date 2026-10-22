@@ -23,6 +23,12 @@ export async function cerrarSesionSupabase(): Promise<void> {
   await supabase?.auth.signOut();
 }
 
+export async function tokenSupabase(): Promise<string | undefined> {
+  if (!supabase) return undefined;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token;
+}
+
 export async function leerPerfilSupabase(userId: string): Promise<string | undefined> {
   if (!supabase) return undefined;
   const { data, error } = await supabase.from('perfiles').select('nombre').eq('id', userId).maybeSingle();

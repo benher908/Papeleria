@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser';
+import { DecodeHintType } from '@zxing/library';
 import type { ColaEscaneo } from './cola';
 import { Boton, Aviso } from '../componentes/ui';
 
@@ -18,13 +19,13 @@ export function CamaraEscaner({ cola, alCodigo }: { readonly cola?: ColaEscaneo;
     try {
       // Da a React un ciclo de render para montar el <video> antes de usarlo.
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      const lector = new BrowserMultiFormatReader();
+      const lector = new BrowserMultiFormatReader(new Map([[DecodeHintType.TRY_HARDER, true]]));
       if (!video.current) throw new Error('No se pudo preparar la vista de cámara.');
       // En Android algunos navegadores no enumeran cámaras hasta que se solicita
       // getUserMedia. Pedir la trasera directamente hace aparecer el permiso.
       controles.current = await lector.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } } }, video.current, (resultado) => {
         const codigo = resultado?.getText().trim();
-        if (!codigo) return;
+        if (!codigo || (codigo.length !== 13 && !/^[A-Za-z0-9-]+$/.test(codigo))) return;
         const symbology = resultado!.getBarcodeFormat().toString();
         if (alCodigo) alCodigo(codigo, symbology);
         else cola?.emitir({ codigo, origen: 'celular', leido_at: new Date().toISOString(), symbology });

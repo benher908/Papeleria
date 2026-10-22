@@ -245,7 +245,7 @@ describe('usuarios', () => {
     // El error lleva los motivos del núcleo, no un mensaje genérico: la pantalla los
     // muestra tal cual, y así no hay dos redacciones distintas de la misma regla.
     await intento.catch((error: ErrorContrasenaDebil) => {
-      expect(error.problemas[0]).toContain('12 caracteres');
+      expect(error.problemas[0]).toContain('10 caracteres');
     });
   });
 

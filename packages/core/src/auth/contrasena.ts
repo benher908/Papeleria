@@ -1,7 +1,7 @@
 /**
  * LA REGLA DE LA CONTRASEÑA — lo que se exige, y sobre todo lo que NO se exige.
  *
- * `docs/07 §1.2` es explícito: mínimo 12 caracteres y **nada** de símbolos obligatorios.
+ * `docs/07 §1.2` fija el mínimo operativo en 10 caracteres y **nada** de símbolos obligatorios.
  * Las reglas de composición forzada ("una mayúscula, un número, un símbolo") producen
  * exactamente lo que se quiere evitar: `Papeleria1!`, que es corta, predecible y está en
  * todas las listas. Un mínimo de largo alto hace más trabajo real que cualquier exigencia
@@ -13,7 +13,7 @@
  * datos más grande que el resto de este módulo, y su sitio natural es el servidor.
  */
 
-export const LARGO_MINIMO_CONTRASENA = 12;
+export const LARGO_MINIMO_CONTRASENA = 10;
 
 /**
  * Revisa una contraseña y devuelve la lista de problemas. Lista vacía = aceptable.

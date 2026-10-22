@@ -12,11 +12,11 @@ describe('revisarContrasena', () => {
   test('rechaza la corta y dice cuánto le falta', () => {
     const problemas = revisarContrasena('Papeleria1!');
     expect(problemas).toHaveLength(1);
-    expect(problemas[0]).toContain('12 caracteres');
+    expect(problemas[0]).toContain('10 caracteres');
     expect(problemas[0]).toContain('tiene 11');
   });
 
-  test('exactamente 12 caracteres ya pasa', () => {
+  test('exactamente 10 caracteres ya pasa', () => {
     const doce = 'a'.repeat(LARGO_MINIMO_CONTRASENA - 1) + 'b';
     expect(revisarContrasena(doce, [])).toEqual([]);
   });

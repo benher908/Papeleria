@@ -20,6 +20,7 @@ export interface FilaExistencia {
   readonly unidad: string;
   readonly stock: string;
   readonly minimo: string;
+  readonly comprar: string;
   readonly costoPromedioMinor: bigint;
   readonly valorMinor: bigint;
   readonly urgencia: 'agotado' | 'bajo' | 'normal';
@@ -27,10 +28,10 @@ export interface FilaExistencia {
 
 export async function listarExistencias(cliente: ClienteSql): Promise<FilaExistencia[]> {
   const { rows } = await cliente.query<{
-    id: string; nombre: string; abreviatura: string; stock: unknown; minimo: unknown;
+    id: string; nombre: string; abreviatura: string; stock: unknown; minimo: unknown; maximo: unknown;
     costo: unknown;
   }>(`SELECT p.id, p.nombre, u.abreviatura, COALESCE(s.qty_base, 0) AS stock,
-              p.stock_minimo AS minimo, p.costo_promedio_minor AS costo
+              p.stock_minimo AS minimo, p.stock_maximo AS maximo, p.costo_promedio_minor AS costo
          FROM products p JOIN units u ON u.id = p.unit_id
          LEFT JOIN stock_levels s ON s.product_id = p.id
         WHERE p.deleted_at IS NULL AND p.is_activo AND p.tracks_stock
@@ -40,9 +41,11 @@ export async function listarExistencias(cliente: ClienteSql): Promise<FilaExiste
   return rows.map((r) => {
     const stock = String(r.stock); const minimo = String(r.minimo);
     const cantidad = Number(stock); const minimoNumero = Number(minimo);
+    const maximo = r.maximo === null ? minimoNumero : Number(r.maximo);
     const costo = BigInt(String(r.costo));
     return {
       productoId: r.id, nombre: r.nombre, unidad: r.abreviatura, stock, minimo,
+      comprar: String(Math.max(0, maximo - cantidad)),
       costoPromedioMinor: costo,
       valorMinor: BigInt(Math.round(cantidad * 1000)) * costo / 1000n,
       urgencia: cantidad <= 0 ? 'agotado' : cantidad <= minimoNumero ? 'bajo' : 'normal',

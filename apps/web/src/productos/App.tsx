@@ -67,6 +67,15 @@ type Vista =
   | { readonly tipo: 'editar'; readonly fila: FilaProducto }
   | { readonly tipo: 'importar' };
 type Pestana = 'vender' | 'productos' | 'inventario' | 'reportes' | 'etiquetas' | 'gestion' | 'ajustes' | 'respaldo';
+const PESTANA_GUARDADA = 'papeleria:pestana';
+const PESTANAS_VALIDAS: readonly Pestana[] = ['vender', 'productos', 'inventario', 'reportes', 'etiquetas', 'gestion', 'ajustes', 'respaldo'];
+
+function pestanaInicial(): Pestana {
+  const guardada = window.localStorage.getItem(PESTANA_GUARDADA);
+  return guardada !== null && PESTANAS_VALIDAS.includes(guardada as Pestana)
+    ? guardada as Pestana
+    : 'vender';
+}
 
 interface Exito {
   readonly texto: string;
@@ -85,7 +94,7 @@ function mensajeDe(causa: unknown): string {
 }
 
 export function AppProductos({ base, sesion, cola }: PropsApp) {
-  const [pestana, setPestana] = useState<Pestana>('vender');
+  const [pestana, setPestana] = useState<Pestana>(pestanaInicial);
   const [vista, setVista] = useState<Vista>({ tipo: 'lista' });
 
   const [filtro, setFiltro] = useState('');
@@ -98,6 +107,10 @@ export function AppProductos({ base, sesion, cola }: PropsApp) {
   const [unidades, setUnidades] = useState<readonly OpcionCatalogo[]>([]);
   const [errorCatalogo, setErrorCatalogo] = useState<string | null>(null);
   const [versionCatalogos, setVersionCatalogos] = useState(0);
+
+  useEffect(() => {
+    window.localStorage.setItem(PESTANA_GUARDADA, pestana);
+  }, [pestana]);
 
   const [guardando, setGuardando] = useState(false);
   const [errorForm, setErrorForm] = useState<string | null>(null);

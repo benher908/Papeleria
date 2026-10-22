@@ -15,6 +15,7 @@
     "@papeleria/core": "workspace:*",
     "@papeleria/db": "workspace:*",
     "@supabase/supabase-js": "^2.118.0",
+    "@zxing/browser": "^0.2.1",
     "bwip-js": "^4.11.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

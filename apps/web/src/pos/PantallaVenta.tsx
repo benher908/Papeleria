@@ -64,6 +64,7 @@ import { Aviso, Boton, Entrada, Seleccion, Tarjeta, cx } from '../componentes/ui
 import type { BaseLocal } from '../db/baseLocal';
 import { comoClienteTransaccional } from '../db/cliente';
 import type { ColaEscaneo } from '../escaneo/cola';
+import { CamaraEscaner } from '../escaneo/CamaraEscaner';
 import { intentarCentavos, pesos, pesosParaEditar } from '../productos/formato';
 import { EstilosDeImpresion, CorteZ, Ticket, type DatosNegocio } from './Ticket';
 
@@ -1020,6 +1021,7 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
             buscador={buscador}
             onAgregar={agregarFila}
             onVentaLibre={abrirVentaLibre}
+            cola={cola}
           />
 
           <Carrito
@@ -1655,6 +1657,7 @@ function Buscador({
   buscador,
   onAgregar,
   onVentaLibre,
+  cola,
 }: {
   readonly busqueda: string;
   readonly onBusqueda: (valor: string) => void;
@@ -1665,6 +1668,7 @@ function Buscador({
   readonly buscador: React.RefObject<HTMLInputElement | null>;
   readonly onAgregar: (fila: FilaProducto) => void;
   readonly onVentaLibre: () => void;
+  readonly cola: ColaEscaneo;
 }) {
   return (
     <Tarjeta className="flex min-h-[28rem] flex-col p-4 sm:p-5">
@@ -1695,6 +1699,7 @@ function Buscador({
           Venta libre: copias o servicio (F4)
         </Boton>
       </div>
+      <CamaraEscaner cola={cola} />
 
       {busqueda.trim() === '' && favoritos.length > 0 ? (
         <div className="mt-3">

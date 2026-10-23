@@ -1795,7 +1795,7 @@ function Carrito({
   return (
     <Tarjeta className="pos-cart flex min-h-0 flex-col p-3 sm:p-4">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-base font-semibold">Carrito</h2>
+        <h2 className="text-base font-semibold">Venta actual</h2>
         <span className="text-xs text-[var(--suave)]">
           {lineas.length} línea{lineas.length === 1 ? '' : 's'}
         </span>
@@ -1825,7 +1825,7 @@ function Carrito({
         </div>
       )}
 
-      <div className="mt-3 border-t border-[var(--linea)] bg-[var(--tarjeta)] pt-3">
+      <div className="mt-auto border-t border-[var(--linea)] bg-[var(--tarjeta)] pt-3">
         {lineas.length === 0 ? null : (
           <>
             <label className="flex flex-col gap-1 text-xs font-medium text-[var(--suave)]">

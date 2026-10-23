@@ -81,6 +81,7 @@ body {
     position: sticky;
     top: 0.75rem;
     max-height: calc(100dvh - 11rem);
+    min-height: calc(100dvh - 11rem);
     overflow: hidden;
   }
 }

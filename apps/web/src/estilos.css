@@ -66,14 +66,12 @@ body {
    amplias; en móvil se apila y conserva zonas cómodas para tocar. */
 .pos-workspace {
   width: 100%;
-  height: calc(100dvh - 10.5rem);
-  overflow: hidden;
+  height: auto;
+  overflow: visible;
 }
 
 .pos-layout {
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
+  min-height: calc(100dvh - 10.5rem);
 }
 
 @media (min-width: 1280px) {
@@ -83,10 +81,8 @@ body {
 
   .pos-cart {
     position: relative;
-    height: 100%;
-    max-height: 100%;
-    min-height: 0;
-    overflow: hidden;
+    min-height: 28rem;
+    overflow: visible;
     padding-bottom: 15rem;
   }
 

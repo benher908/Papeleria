@@ -80,7 +80,8 @@ body {
   .pos-cart {
     position: sticky;
     top: 0.75rem;
-    max-height: calc(100dvh - 14.25rem);
+    max-height: calc(100dvh - 11rem);
+    overflow: hidden;
   }
 }
 

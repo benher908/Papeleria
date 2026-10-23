@@ -1806,37 +1806,23 @@ function Carrito({
           Todavía no hay nada. Escanea o busca un producto.
         </p>
       ) : (
-        <ul className="mt-2 max-h-[14rem] flex-1 divide-y divide-[var(--linea)] overflow-y-auto pr-1 xl:max-h-[15rem]">
-          {lineas.map((linea) => (
-            <li key={linea.clave} className="py-1.5">
-              <div className="flex items-start justify-between gap-2">
-                <p className="min-w-0 flex-1 break-words text-xs font-medium">{linea.nombre}</p>
-                <button
-                  type="button"
-                  onClick={() => onQuitar(linea.clave)}
-                  className="rounded border border-[var(--linea)] px-1.5 py-0.5 text-[10px] text-[var(--mal)] hover:bg-[var(--mal-fondo)]"
-                  aria-label={`Quitar ${linea.nombre}`}
-                >
-                  Quitar
-                </button>
-              </div>
-              <div className="mt-1 flex items-center justify-between gap-2">
-                <span className="text-[11px] text-[var(--suave)]">
-                  Cantidad: <strong className="text-[var(--texto)]">{cantidad(linea.qty)}</strong>
-                  <span className="ml-1">· escanea otra vez para sumar</span>
-                </span>
-                <div className="text-right">
-                  <p className="font-mono text-xs">
-                    {pesos(porCantidad(linea.precioMinor, linea.qty))}
-                  </p>
-                  <p className="text-[9px] text-[var(--suave)]">
-                    {pesos(linea.precioMinor)} c/u
-                  </p>
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <div className="mt-2 max-h-[15rem] flex-1 overflow-y-auto">
+          <table className="w-full border-collapse text-xs">
+            <thead className="border-y border-[var(--linea)] text-left text-[10px] uppercase text-[var(--suave)]">
+              <tr><th className="px-1 py-1">Producto</th><th className="px-1 py-1 text-center">Cant.</th><th className="px-1 py-1 text-right">Importe</th><th /></tr>
+            </thead>
+            <tbody>
+              {lineas.map((linea) => (
+                <tr key={linea.clave} className="border-b border-[var(--linea)]">
+                  <td className="max-w-[13rem] break-words px-1 py-1.5 font-medium">{linea.nombre}<span className="block text-[9px] font-normal text-[var(--suave)]">{pesos(linea.precioMinor)} c/u</span></td>
+                  <td className="px-1 py-1.5 text-center font-mono">{cantidad(linea.qty)}</td>
+                  <td className="px-1 py-1.5 text-right font-mono">{pesos(porCantidad(linea.precioMinor, linea.qty))}</td>
+                  <td className="px-1 py-1.5 text-right"><button type="button" onClick={() => onQuitar(linea.clave)} className="rounded border border-[var(--linea)] px-1 py-0.5 text-[9px] text-[var(--mal)]" aria-label={`Quitar ${linea.nombre}`}>×</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <div className="mt-3 border-t border-[var(--linea)] bg-[var(--tarjeta)] pt-3">

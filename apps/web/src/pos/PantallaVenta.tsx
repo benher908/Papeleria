@@ -1014,7 +1014,7 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
           </div>
         </div>
       ) : (
-        <div className="pos-sale-grid grid min-h-0 flex-1 gap-5">
+        <div className="pos-sale-grid grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(360px,430px)]">
           <Buscador
             busqueda={busqueda}
             onBusqueda={setBusqueda}
@@ -1714,28 +1714,23 @@ function Buscador({
           <p className="text-xs font-medium uppercase tracking-wide text-[var(--suave)]">
             Productos disponibles ({favoritos.length})
           </p>
-          <div className="mt-2 grid min-h-0 grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+          <div className="mt-2 min-h-0 flex-1 divide-y divide-[var(--linea)] overflow-y-auto pr-1">
             {favoritos.map((fila) => (
               <button
                 key={fila.id}
                 type="button"
                 onClick={() => onAgregar(fila)}
-                className="flex min-h-28 flex-col items-start justify-between rounded-lg border border-[var(--linea)] bg-[var(--fondo)] p-3 text-left transition hover:border-[var(--acento)] hover:bg-[var(--tarjeta)] focus:outline-none focus:ring-2 focus:ring-[var(--acento)]"
+                className="flex w-full items-center gap-3 py-2 text-left transition hover:bg-[var(--fondo)] focus:outline-none focus:ring-2 focus:ring-[var(--acento)]"
               >
-                <span className="w-full break-words text-sm font-semibold leading-tight">
-                  {fila.nombre}
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words text-sm font-medium leading-tight">{fila.nombre}</span>
+                  <span className="block text-[11px] text-[var(--suave)]">
+                    {fila.codigo ?? 'sin código'} · Stock: {fila.stock} {fila.unidadAbreviatura}
+                  </span>
                 </span>
-                <span className="mt-2 w-full text-xs text-[var(--suave)]">
-                  Stock: {fila.stock} {fila.unidadAbreviatura}
-                </span>
-                <span className="mt-1 font-mono text-base font-semibold">
-                  {pesos(fila.precioMinor)}
-                </span>
-                <span className="mt-1 w-full truncate text-[11px] text-[var(--suave)]">
-                  {fila.codigo ?? 'sin código'}
-                </span>
-                <span className="mt-2 w-full rounded-md bg-[var(--acento)] px-2 py-1.5 text-center text-xs font-semibold text-white">
-                  Agregar
+                <span className="shrink-0 text-right">
+                  <span className="block font-mono text-sm">{pesos(fila.precioMinor)}</span>
+                  <span className="text-[11px] text-[var(--acento)]">Agregar</span>
                 </span>
               </button>
             ))}
@@ -1754,24 +1749,23 @@ function Buscador({
           <p className="mt-3 text-sm text-[var(--suave)]">Sin coincidencias.</p>
         )
       ) : (
-        <ul className="mt-3 grid max-h-[calc(100dvh-23rem)] flex-1 grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+        <ul className="mt-3 max-h-[calc(100dvh-23rem)] flex-1 divide-y divide-[var(--linea)] overflow-y-auto pr-1 xl:max-h-none">
           {resultados.map((fila) => (
             <li key={fila.id}>
               <button
                 type="button"
                 onClick={() => onAgregar(fila)}
-                className="flex min-h-28 h-full w-full flex-col items-start justify-between rounded-lg border border-[var(--linea)] bg-[var(--fondo)] p-3 text-left transition hover:border-[var(--acento)] hover:bg-[var(--tarjeta)] focus:outline-none focus:ring-2 focus:ring-[var(--acento)]"
+                className="flex w-full items-center justify-between gap-3 py-2 text-left transition hover:bg-[var(--fondo)] focus:outline-none focus:ring-2 focus:ring-[var(--acento)]"
               >
-                <span className="w-full break-words text-sm font-semibold leading-tight">{fila.nombre}</span>
-                <span className="mt-2 text-xs text-[var(--suave)]">
-                  Stock: {fila.stock} {fila.unidadAbreviatura}
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words text-sm font-medium leading-tight">{fila.nombre}</span>
+                  <span className="block text-[11px] text-[var(--suave)]">
+                    {fila.codigo ?? 'sin código'} · Stock: {fila.stock} {fila.unidadAbreviatura}
+                  </span>
                 </span>
-                <span className="mt-1 font-mono text-base font-semibold">{pesos(fila.precioMinor)}</span>
-                <span className="mt-1 w-full truncate text-[11px] text-[var(--suave)]">
-                  {fila.codigo ?? 'sin código'}
-                </span>
-                <span className="mt-2 w-full rounded-md bg-[var(--acento)] px-2 py-1.5 text-center text-xs font-semibold text-white">
-                  Agregar
+                <span className="shrink-0 text-right">
+                  <span className="block font-mono text-sm">{pesos(fila.precioMinor)}</span>
+                  <span className="text-[11px] text-[var(--acento)]">Agregar</span>
                 </span>
               </button>
             </li>

@@ -101,6 +101,8 @@ body {
 
   .pos-cobrar {
     position: static;
+    width: 13rem;
+    margin-left: auto;
   }
 }
 

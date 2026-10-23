@@ -1040,7 +1040,6 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
             total={total}
             onDescuento={setDescuentoTexto}
             onMotivo={setMotivoDescuento}
-            onCantidad={cambiarCantidad}
             onQuitar={quitar}
             onCobrar={abrirCobro}
           />
@@ -1787,7 +1786,6 @@ function Carrito({
   total,
   onDescuento,
   onMotivo,
-  onCantidad,
   onQuitar,
   onCobrar,
 }: {
@@ -1801,7 +1799,6 @@ function Carrito({
   readonly total: bigint;
   readonly onDescuento: (texto: string) => void;
   readonly onMotivo: (texto: string) => void;
-  readonly onCantidad: (clave: string, qty: number) => void;
   readonly onQuitar: (clave: string) => void;
   readonly onCobrar: () => void;
 }) {
@@ -1827,41 +1824,17 @@ function Carrito({
                 <button
                   type="button"
                   onClick={() => onQuitar(linea.clave)}
-                  className="text-[11px] text-[var(--mal)] hover:underline"
+                  className="rounded border border-[var(--linea)] px-1.5 py-0.5 text-[10px] text-[var(--mal)] hover:bg-[var(--mal-fondo)]"
                   aria-label={`Quitar ${linea.nombre}`}
                 >
                   Quitar
                 </button>
               </div>
               <div className="mt-1 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1">
-                  <Boton
-                    variante="secundario"
-                    className="h-7 w-7 px-0 py-0"
-                    onClick={() => onCantidad(linea.clave, linea.qty - 1000)}
-                    aria-label="Quitar una pieza"
-                  >
-                    −
-                  </Boton>
-                  <input
-                    className="w-14 rounded border border-[var(--linea)] bg-[var(--fondo)] px-1 py-0.5 text-center text-sm"
-                    value={cantidad(linea.qty)}
-                    inputMode="numeric"
-                    onChange={(evento) => {
-                      const n = Number.parseInt(evento.target.value, 10);
-                      if (Number.isFinite(n)) onCantidad(linea.clave, Math.max(0, n) * 1000);
-                    }}
-                    aria-label={`Cantidad de ${linea.nombre}`}
-                  />
-                  <Boton
-                    variante="secundario"
-                    className="h-7 w-7 px-0 py-0"
-                    onClick={() => onCantidad(linea.clave, linea.qty + 1000)}
-                    aria-label="Agregar una pieza"
-                  >
-                    +
-                  </Boton>
-                </div>
+                <span className="text-[11px] text-[var(--suave)]">
+                  Cantidad: <strong className="text-[var(--texto)]">{cantidad(linea.qty)}</strong>
+                  <span className="ml-1">· escanea otra vez para sumar</span>
+                </span>
                 <div className="text-right">
                   <p className="font-mono text-xs">
                     {pesos(porCantidad(linea.precioMinor, linea.qty))}

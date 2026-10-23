@@ -502,16 +502,6 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
     buscador.current?.focus();
   }
 
-  function cambiarCantidad(clave: string, qty: number): void {
-    if (qty <= 0) {
-      setLineas((actuales) => actuales.filter((linea) => linea.clave !== clave));
-      return;
-    }
-    setLineas((actuales) =>
-      actuales.map((linea) => (linea.clave === clave ? { ...linea, qty } : linea)),
-    );
-  }
-
   function quitar(clave: string): void {
     setLineas((actuales) => {
       const siguientes = actuales.filter((linea) => linea.clave !== clave);

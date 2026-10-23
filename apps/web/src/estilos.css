@@ -91,19 +91,19 @@ body {
   }
 
   .pos-cart-footer {
-    position: absolute;
-    right: 1rem;
+    position: fixed;
+    right: 2rem;
     bottom: 0.75rem;
-    left: 1rem;
+    width: min(34rem, calc(50vw - 3rem));
     z-index: 2;
+    padding: 0.75rem 1rem 1rem;
+    border: 1px solid var(--linea);
+    border-radius: 0.7rem;
+    box-shadow: 0 4px 18px rgb(0 0 0 / 12%);
   }
 
   .pos-cobrar {
-    position: fixed;
-    right: 2rem;
-    bottom: 1rem;
-    z-index: 20;
-    width: min(34rem, calc(50vw - 3rem));
+    position: static;
   }
 }
 

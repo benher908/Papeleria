@@ -1806,7 +1806,7 @@ function Carrito({
           Todavía no hay nada. Escanea o busca un producto.
         </p>
       ) : (
-        <div className="mt-2 max-h-[15rem] flex-1 overflow-y-auto">
+        <div className="mt-2 flex-1 overflow-visible">
           <table className="w-full border-collapse text-xs">
             <thead className="border-y border-[var(--linea)] text-left text-[10px] uppercase text-[var(--suave)]">
               <tr><th className="px-1 py-1">Producto</th><th className="px-1 py-1 text-center">Cant.</th><th className="px-1 py-1 text-right">Importe</th><th /></tr>

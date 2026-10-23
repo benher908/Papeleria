@@ -97,6 +97,14 @@ body {
     left: 1rem;
     z-index: 2;
   }
+
+  .pos-cobrar {
+    position: fixed;
+    right: 2rem;
+    bottom: 1rem;
+    z-index: 20;
+    width: min(34rem, calc(50vw - 3rem));
+  }
 }
 
 .panel {

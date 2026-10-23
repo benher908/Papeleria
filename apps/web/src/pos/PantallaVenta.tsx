@@ -1863,7 +1863,7 @@ function Carrito({
           <span className="text-sm text-[var(--suave)]">Total</span>
           <strong className="text-2xl">{pesos(total)}</strong>
         </div>
-        <Boton className="mt-3 w-full" onClick={onCobrar} disabled={lineas.length === 0}>
+        <Boton className="pos-cobrar mt-3 w-full" onClick={onCobrar} disabled={lineas.length === 0}>
           Cobrar (F1)
         </Boton>
       </div>

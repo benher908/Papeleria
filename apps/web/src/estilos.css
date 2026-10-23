@@ -88,9 +88,9 @@ body {
 
   .pos-cart-footer {
     position: fixed;
-    right: 0;
+    right: 1rem;
     bottom: 0.75rem;
-    left: 0;
+    left: 21rem;
     width: auto;
     z-index: 2;
     padding: 0.75rem 1rem 1rem;

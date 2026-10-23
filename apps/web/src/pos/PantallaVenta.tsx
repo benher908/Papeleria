@@ -1004,7 +1004,7 @@ export function PantallaVenta({ base, sesion, cola }: PropsPOS) {
           </div>
         </div>
       ) : (
-        <div className="pos-sale-grid grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(360px,430px)]">
+        <div className="pos-sale-grid grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
           <Buscador
             busqueda={busqueda}
             onBusqueda={setBusqueda}

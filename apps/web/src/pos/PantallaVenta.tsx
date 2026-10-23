@@ -1667,7 +1667,7 @@ function Buscador({
   readonly deviceId: string;
 }) {
   return (
-    <Tarjeta className="flex min-h-[28rem] flex-col p-4 sm:p-5">
+    <Tarjeta className="pos-search-panel flex min-h-[28rem] flex-col p-4 sm:p-5">
       <form onSubmit={onBuscar} className="flex flex-col gap-2">
         <label className="flex flex-col gap-1 text-xs font-medium text-[var(--suave)]">
           Escanear o buscar (F2)

@@ -101,6 +101,13 @@ body {
 
   .pos-cobrar {
     position: static;
+    width: 13rem;
+    margin-left: auto;
+  }
+
+  .pos-search-panel {
+    max-height: calc(100dvh - 12rem);
+    overflow-y: auto;
   }
 }
 

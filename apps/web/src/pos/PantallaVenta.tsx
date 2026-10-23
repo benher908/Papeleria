@@ -1825,7 +1825,7 @@ function Carrito({
         </div>
       )}
 
-      <div className="mt-auto border-t border-[var(--linea)] bg-[var(--tarjeta)] pt-3">
+      <div className="pos-cart-footer mt-auto border-t border-[var(--linea)] bg-[var(--tarjeta)] pt-3">
         {lineas.length === 0 ? null : (
           <>
             <label className="flex flex-col gap-1 text-xs font-medium text-[var(--suave)]">

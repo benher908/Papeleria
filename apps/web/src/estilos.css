@@ -82,12 +82,20 @@ body {
   }
 
   .pos-cart {
-    position: sticky;
-    top: 0.75rem;
+    position: relative;
     height: 100%;
     max-height: 100%;
     min-height: 0;
     overflow: hidden;
+    padding-bottom: 15rem;
+  }
+
+  .pos-cart-footer {
+    position: absolute;
+    right: 1rem;
+    bottom: 0.75rem;
+    left: 1rem;
+    z-index: 2;
   }
 }
 

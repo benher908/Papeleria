@@ -66,10 +66,14 @@ body {
    amplias; en móvil se apila y conserva zonas cómodas para tocar. */
 .pos-workspace {
   width: 100%;
+  height: calc(100dvh - 10.5rem);
+  overflow: hidden;
 }
 
 .pos-layout {
-  min-height: calc(100dvh - 9.5rem);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 @media (min-width: 1280px) {

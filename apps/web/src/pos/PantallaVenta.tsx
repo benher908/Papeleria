@@ -1817,7 +1817,7 @@ function Carrito({
                   <td className="max-w-[13rem] break-words px-1 py-1.5 font-medium">{linea.nombre}<span className="block text-[9px] font-normal text-[var(--suave)]">{pesos(linea.precioMinor)} c/u</span></td>
                   <td className="px-1 py-1.5 text-center font-mono">{cantidad(linea.qty)}</td>
                   <td className="px-1 py-1.5 text-right font-mono">{pesos(porCantidad(linea.precioMinor, linea.qty))}</td>
-                  <td className="px-1 py-1.5 text-right"><button type="button" onClick={() => onQuitar(linea.clave)} className="rounded border border-[var(--linea)] px-1 py-0.5 text-[9px] text-[var(--mal)]" aria-label={`Quitar ${linea.nombre}`}>×</button></td>
+                  <td className="px-1 py-1.5 text-right"><button type="button" onClick={() => onQuitar(linea.clave)} className="flex h-5 w-5 min-w-5 items-center justify-center overflow-hidden rounded border border-[var(--linea)] p-0 text-[9px] leading-none text-[var(--mal)]" aria-label={`Quitar ${linea.nombre}`}>×</button></td>
                 </tr>
               ))}
             </tbody>
